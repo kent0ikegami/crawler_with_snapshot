@@ -18,8 +18,6 @@ async def main():
         # パスワードセレクタからフォーカスを外す
         await page.focus(config.USERNAME_SELECTOR)
 
-        # ボタンのdisabled状態が解除されるのを待つ
-        await page.wait_for_selector(config.SUBMIT_SELECTOR, state='enabled')
         await page.click(config.SUBMIT_SELECTOR)
 
         await page.wait_for_url(config.LOGIN_SUCCESS_URL_PATTERN)
