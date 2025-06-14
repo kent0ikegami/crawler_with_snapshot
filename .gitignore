@@ -1,0 +1,8 @@
+html/*
+!html/.gitkeep
+screenshots/*
+!screenshots/.gitkeep
+config.py
+result.csv
+__pycache__/
+storage_state.json
