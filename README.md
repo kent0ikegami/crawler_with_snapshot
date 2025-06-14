@@ -15,3 +15,10 @@ python login_and_save_state.py
 ```bash
 python main.py
 ```
+
+## other
+
+```bash
+python playwright_inspector.py
+python playwright_codegen.py
+```

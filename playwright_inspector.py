@@ -9,6 +9,7 @@ import asyncio
 import argparse
 from playwright.async_api import async_playwright
 import config
+import playwright_config
 
 async def main(url=None, use_login=False):
     # ディレクトリの作成
@@ -18,16 +19,11 @@ async def main(url=None, use_login=False):
     print("Playwrightインスペクターを起動中...")
     
     async with async_playwright() as p:
-        # Chromeを使用
-        browser = await p.chromium.launch(
-            headless=False,
-            devtools=True,  # DevToolsを自動的に開く
-        )
+        # playwright_config.pyから設定を使用
+        browser = await p.chromium.launch(**playwright_config.browser_options)
         
         # コンテキストのオプション
-        context_options = {
-            "viewport": {"width": 1280, "height": 720},
-        }
+        context_options = playwright_config.context_options.copy()
         
         # ログインセッションを使用する場合
         if use_login and os.path.exists("storage_state.json"):
@@ -38,24 +34,24 @@ async def main(url=None, use_login=False):
         context = await browser.new_context(**context_options)
         
         # トレースを開始（デバッグ用）
-        await context.tracing.start(
-            screenshots=True,
-            snapshots=True,
-            sources=True
-        )
+        await context.tracing.start(**playwright_config.trace_options)
         
         # 新しいページを開く
         page = await context.new_page()
         
+        # タイムアウト設定を適用
+        page.set_default_timeout(playwright_config.timeouts["timeout"])
+        page.set_default_navigation_timeout(playwright_config.timeouts["navigation_timeout"])
+        
         # URLが指定されている場合はそこに移動
         if url:
             print(f"指定されたURL {url} に移動しています...")
-            await page.goto(url, timeout=30000)
+            await page.goto(url, timeout=playwright_config.timeouts["page_load_timeout"])
         else:
             # URLが指定されていない場合は設定ファイルのURLを使用
             start_url = config.LOGIN_URL if use_login else (config.START_URLS[0] if config.START_URLS else "https://example.com")
             print(f"デフォルトURL {start_url} に移動しています...")
-            await page.goto(start_url, timeout=30000)
+            await page.goto(start_url, timeout=playwright_config.timeouts["page_load_timeout"])
         
         print("\n=== Playwrightインスペクターのヒント ===")
         print("1. Dev Toolsの「Elements」タブでHTML要素を検査できます")
