@@ -14,7 +14,7 @@ async def main():
 
         await page.fill(config.USERNAME_SELECTOR, config.USERNAME)
         await page.fill(config.PASSWORD_SELECTOR, config.PASSWORD)
-        await page.focus(config.SUBMIT_SELECTOR)
+        await page.focus(config.USERNAME_SELECTOR)  # パスワードセレクタからフォーカスを外す
 
         await page.click(config.SUBMIT_SELECTOR)
 
