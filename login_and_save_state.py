@@ -14,6 +14,8 @@ async def main():
 
         await page.fill(config.USERNAME_SELECTOR, config.USERNAME)
         await page.fill(config.PASSWORD_SELECTOR, config.PASSWORD)
+        await page.focus(config.SUBMIT_SELECTOR)
+
         await page.click(config.SUBMIT_SELECTOR)
 
         await page.wait_for_url(config.LOGIN_SUCCESS_URL_PATTERN)
