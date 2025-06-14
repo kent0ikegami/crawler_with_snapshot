@@ -6,6 +6,7 @@ from urllib.parse import urljoin, urldefrag
 import config
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
+import playwright_config as pw_config
 
 # 保存ディレクトリ
 os.makedirs("html", exist_ok=True)
@@ -24,17 +25,19 @@ def generate_filename(url: str, ext: str) -> str:
 
 async def take_screenshot(page, url: str, filename: str):
     try:
-        await page.goto(url, timeout=15000)
-        await page.screenshot(path=filename, full_page=True)
+        await page.goto(url, timeout=pw_config.timeouts['navigation_timeout'])
+        # filenameを直接指定し、設定オプションとマージ
+        screenshot_opts = {**pw_config.screenshot_options, "path": filename}
+        await page.screenshot(**screenshot_opts)
     except Exception as e:
         print(f"[!] Screenshot failed for {url}: {e}")
 
 async def save_html(context, url: str, filename: str):
     try:
         page = await context.new_page()
-        await page.goto(url, timeout=15000)
+        await page.goto(url, timeout=pw_config.timeouts['navigation_timeout'])
         content = await page.content()
-        status = 200
+        status = 200  # Playwrightは正常にページを取得できた場合は暗黙的に成功
         
         with open(filename, "w", encoding="utf-8") as f:
             f.write(content)
@@ -92,12 +95,13 @@ async def crawl(context, url: str, depth: int):
 
 async def main(start_urls):
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        browser = await p.chromium.launch(**pw_config.browser_options)
 
+        context_options = pw_config.context_options.copy()
         if config.USE_LOGIN:
-            context = await browser.new_context(storage_state="storage_state.json")
-        else:
-            context = await browser.new_context()
+            context_options['storage_state'] = "storage_state.json"
+        
+        context = await browser.new_context(**context_options)
 
         for url in start_urls:
             await crawl(context, url, depth=0)

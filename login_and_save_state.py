@@ -10,6 +10,8 @@ async def main():
 
         await page.goto(config.LOGIN_URL)
 
+        await page.wait_for_selector(config.USERNAME_SELECTOR)
+
         await page.fill(config.USERNAME_SELECTOR, config.USERNAME)
         await page.fill(config.PASSWORD_SELECTOR, config.PASSWORD)
         await page.click(config.SUBMIT_SELECTOR)
