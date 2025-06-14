@@ -7,6 +7,10 @@ browser_options = {
     "headless": False,  # ヘッドレスモードを無効化（ブラウザUIを表示）
     "slow_mo": 100,     # アクションの間に遅延を追加（ミリ秒）
     "devtools": True,   # DevToolsを開いた状態で起動
+    # インストール済みのChromeを使用する場合はこのパスを設定
+    # "executablePath": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",  # macOSの場合
+    # "executablePath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",  # Windowsの場合
+    # "channel": "chrome",  # または単純にチャンネルを指定する方法
 }
 
 # コンテキスト設定

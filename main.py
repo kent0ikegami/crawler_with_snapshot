@@ -95,7 +95,16 @@ async def crawl(context, url: str, depth: int):
 
 async def main(start_urls):
     async with async_playwright() as p:
-        browser = await p.chromium.launch(**pw_config.browser_options)
+        # Chromiumの代わりにChromeを使用
+        if "executablePath" in pw_config.browser_options:
+            # executablePathが指定されている場合はChromeを使用
+            browser = await p.chrome.launch(**pw_config.browser_options)
+        elif "channel" in pw_config.browser_options and pw_config.browser_options["channel"] == "chrome":
+            # channelがchromeの場合はChromeを使用
+            browser = await p.chrome.launch(**pw_config.browser_options)
+        else:
+            # 従来どおりChromiumを使用
+            browser = await p.chromium.launch(**pw_config.browser_options)
 
         context_options = pw_config.context_options.copy()
         if config.USE_LOGIN:
