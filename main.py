@@ -112,13 +112,6 @@ async def main(start_urls):
         # すでにページが開いている場合はそれを使用、なければ新規作成
         page = context.pages[0] if context.pages else await context.new_page()
         
-        # ログインセッションを確認するための情報を表示
-        cookies = await context.cookies()
-        if cookies:
-            print(f"[+] セッションCookie: {len(cookies)}個のCookieが使用可能です")
-        else:
-            print("[!] 警告: Cookieがありません。ログイン状態が保持されていない可能性があります")
-
         # 各URLを同じページでクロール
         for url in start_urls:
             await crawl(page, url, depth=0)
