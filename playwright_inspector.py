@@ -19,19 +19,21 @@ async def main(url=None, use_login=False):
     print("Playwrightインスペクターを起動中...")
     
     async with async_playwright() as p:
-        # playwright_config.pyから設定を使用
-        browser = await p.chromium.launch(**playwright_config.browser_options)
+        # 設定を準備
+        options = dict(playwright_config.browser_context_options)
         
-        # コンテキストのオプション
-        context_options = playwright_config.context_options.copy()
+        # ログインセッションはユーザーデータディレクトリから自動的に読み込まれる
+        if use_login:
+            print(f"ユーザーデータディレクトリのログイン状態を使用します: {playwright_config.user_data_dir}")
         
-        # ログインセッションを使用する場合
-        if use_login and os.path.exists("storage_state.json"):
-            context_options["storage_state"] = "storage_state.json"
-            print("ログイン状態を使用します")
+        # ブラウザタイプを選択
+        browser_type = p.chrome if options.get("channel") == "chrome" else p.chromium
         
-        # コンテキストを作成
-        context = await browser.new_context(**context_options)
+        # 永続的コンテキストを作成
+        context = await browser_type.launch_persistent_context(
+            playwright_config.user_data_dir,
+            **options
+        )
         
         # トレースを開始（デバッグ用）
         await context.tracing.start(**playwright_config.trace_options)
@@ -76,7 +78,6 @@ async def main(url=None, use_login=False):
         
         # リソースをクリーンアップ
         await context.close()
-        await browser.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Playwrightインスペクターツール")

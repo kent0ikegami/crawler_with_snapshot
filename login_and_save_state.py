@@ -11,7 +11,7 @@ async def main():
     async with async_playwright() as p:
         # 設定を準備
         options = dict(pw_config.browser_context_options)
-                
+        
         # 永続的コンテキストを作成
         context = await p.chromium.launch_persistent_context(
             pw_config.user_data_dir,
@@ -35,8 +35,8 @@ async def main():
 
         await page.wait_for_url(config.LOGIN_SUCCESS_URL_PATTERN)
 
-        await context.storage_state(path="storage_state.json")
-        print("ログイン状態を保存: storage_state.json")
+        # ログイン状態はuser_data_dirに自動保存される
+        print(f"ログイン状態がユーザーデータディレクトリに保存されました: {pw_config.user_data_dir}")
 
         await context.close()
 
