@@ -11,7 +11,7 @@ from playwright.async_api import async_playwright
 import config
 import playwright_config
 
-async def main(url=None, use_login=False):
+async def main(url=None):
     # ディレクトリの作成
     os.makedirs("videos", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
@@ -22,10 +22,7 @@ async def main(url=None, use_login=False):
         # 設定を準備
         options = dict(playwright_config.browser_context_options)
         
-        # ログインセッションはユーザーデータディレクトリから自動的に読み込まれる
-        if use_login:
-            print(f"ユーザーデータディレクトリのログイン状態を使用します: {playwright_config.user_data_dir}")
-        
+
         # ブラウザタイプを選択
         browser_type = p.chrome if options.get("channel") == "chrome" else p.chromium
         
@@ -51,7 +48,7 @@ async def main(url=None, use_login=False):
             await page.goto(url, timeout=playwright_config.timeouts["page_load_timeout"])
         else:
             # URLが指定されていない場合は設定ファイルのURLを使用
-            start_url = config.LOGIN_URL if use_login else (config.START_URLS[0] if config.START_URLS else "https://example.com")
+            start_url = config.START_URLS[0] if config.START_URLS else "https://example.com"
             print(f"デフォルトURL {start_url} に移動しています...")
             await page.goto(start_url, timeout=playwright_config.timeouts["page_load_timeout"])
         
@@ -82,8 +79,7 @@ async def main(url=None, use_login=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Playwrightインスペクターツール")
     parser.add_argument("--url", help="検査するURL", default=None)
-    parser.add_argument("--login", help="ログイン状態を使用する", action="store_true")
     
     args = parser.parse_args()
     
-    asyncio.run(main(url=args.url, use_login=args.login))
+    asyncio.run(main(url=args.url))

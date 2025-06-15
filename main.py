@@ -103,13 +103,6 @@ async def main(start_urls):
         # 設定を準備
         options = dict(pw_config.browser_context_options)
         
-        # ログイン状態について表示
-        if config.USE_LOGIN:
-            print("[+] ユーザーデータディレクトリからログイン状態を読み込みます")
-            print(f"    ディレクトリ: {pw_config.user_data_dir}")
-            if not os.path.exists(pw_config.user_data_dir):
-                print("[!] 警告: ユーザーデータディレクトリが存在しません。最初にlogin_and_save_state.pyを実行してください。")
-        
         # 永続的コンテキストを作成
         context = await p.chromium.launch_persistent_context(
             pw_config.user_data_dir, 
