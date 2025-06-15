@@ -78,7 +78,7 @@ async def crawl(page, url: str, depth: int):
         return
 
     # スクリーンショットも同じページで撮影
-    screenshot_success = await take_screenshot(page, url, screenshot_filename)
+    await take_screenshot(page, url, screenshot_filename)
     
     title = extract_title(html)
 
@@ -123,7 +123,6 @@ async def main(start_urls):
         for url in start_urls:
             await crawl(page, url, depth=0)
 
-        # launch_persistent_contextを使用した場合はcontextのみを閉じる
         await context.close()
 
     with open("result.csv", "w", newline="", encoding="utf-8") as csvfile:
