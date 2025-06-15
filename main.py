@@ -94,29 +94,28 @@ async def crawl(context, url: str, depth: int):
         await crawl(context, link, depth + 1)
 
 async def main(start_urls):
+    # ディレクトリが存在することを確認
+    os.makedirs(pw_config.user_data_dir, exist_ok=True)
+    
     async with async_playwright() as p:
-        # Chromiumの代わりにChromeを使用
-        if "executablePath" in pw_config.browser_options:
-            # executablePathが指定されている場合はChromeを使用
-            browser = await p.chrome.launch(**pw_config.browser_options)
-        elif "channel" in pw_config.browser_options and pw_config.browser_options["channel"] == "chrome":
-            # channelがchromeの場合はChromeを使用
-            browser = await p.chrome.launch(**pw_config.browser_options)
-        else:
-            # 従来どおりChromiumを使用
-            browser = await p.chromium.launch(**pw_config.browser_options)
-
-        context_options = pw_config.context_options.copy()
-        if config.USE_LOGIN:
-            context_options['storage_state'] = "storage_state.json"
+        # 設定を準備
+        options = dict(pw_config.browser_context_options)
         
-        context = await browser.new_context(**context_options)
+        # ログイン状態を使用する場合
+        # if config.USE_LOGIN and os.path.exists("storage_state.json"):
+        #     options["storage_state"] = "storage_state.json"
+            
+        # 永続的コンテキストを作成
+        context = await p.chromium.launch_persistent_context(
+            pw_config.user_data_dir, 
+            **options
+        )
 
         for url in start_urls:
             await crawl(context, url, depth=0)
 
+        # launch_persistent_contextを使用した場合はcontextのみを閉じる
         await context.close()
-        await browser.close()
 
     with open("result.csv", "w", newline="", encoding="utf-8") as csvfile:
         fieldnames = ["url", "depth", "title", "html_file", "screenshot_file", "status_code", "content_length"]

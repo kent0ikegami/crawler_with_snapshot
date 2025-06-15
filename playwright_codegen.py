@@ -12,6 +12,7 @@ def run_codegen():
     output_file = input("生成されたコードの保存先ファイル名を入力してください（例: generated_code.py）: ")
     command = f"playwright codegen {url} --target python-async -o {output_file}"
 
+    
     print(f"コードジェネレータを起動しています: {command}")
     print("ブラウザでの操作を記録します。完了したらコードジェネレータウィンドウを閉じてください。")
     

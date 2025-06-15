@@ -1,12 +1,25 @@
 import asyncio
 from playwright.async_api import async_playwright
 import config
+import playwright_config as pw_config
 
 async def main():
+    # ディレクトリが存在することを確認
+    import os
+    os.makedirs(pw_config.user_data_dir, exist_ok=True)
+    
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context()
-        page = await context.new_page()
+        # 設定を準備
+        options = dict(pw_config.browser_context_options)
+                
+        # 永続的コンテキストを作成
+        context = await p.chromium.launch_persistent_context(
+            pw_config.user_data_dir,
+            **options
+        )
+        
+        # 最初のページを取得
+        page = context.pages[0] if context.pages else await context.new_page()
 
         await page.goto(config.LOGIN_URL)
 
@@ -25,7 +38,7 @@ async def main():
         await context.storage_state(path="storage_state.json")
         print("ログイン状態を保存: storage_state.json")
 
-        await browser.close()
+        await context.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
