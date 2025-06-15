@@ -6,7 +6,9 @@ import os
 import platform
 
 # ユーザーデータディレクトリのパス
-user_data_dir = "/Users/inf/Desktop/user_data"
+import os
+script_dir = os.path.dirname(os.path.abspath(__file__))
+user_data_dir = os.path.join(script_dir, "user_data")
 
 # ブラウザとコンテキスト共通の設定
 browser_context_options = {

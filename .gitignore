@@ -6,3 +6,4 @@ config.py
 result.csv
 __pycache__/
 storage_state.json
+user_data/*
