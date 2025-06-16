@@ -31,8 +31,9 @@ def generate_filename(url: str, ext: str) -> str:
     h = hashlib.md5(url.encode('utf-8')).hexdigest()
     return f"{h}.{ext}"
 
-def extract_links(html: str, base_url: str):
+def extract_unique_links(html: str, base_url: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
+    link_set = set()
     for a in soup.find_all("a", href=True):
         href = a['href']
         joined_url = urljoin(base_url, href)
@@ -49,7 +50,9 @@ def extract_links(html: str, base_url: str):
         ]):
             continue
 
-        yield clean_url
+        link_set.add(clean_url)
+
+    return list(link_set)
 
 def extract_title(html: str):
     soup = BeautifulSoup(html, "html.parser")
@@ -76,6 +79,9 @@ async def crawl(page, url: str, depth: int):
         screenshot_opts = {**pw_config.screenshot_options, "path": screenshot_filename}
         await page.screenshot(**screenshot_opts)
 
+        # 対象リンク抽出
+        unique_links = extract_unique_links(content, url)
+
         result_row = {
             "url": url,
             "case_id": case_id,
@@ -83,6 +89,7 @@ async def crawl(page, url: str, depth: int):
             "title": extract_title(content),
             "status_code": 200,
             "content_length": len(content),
+            "link_count": len(unique_links),
             "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
@@ -91,14 +98,17 @@ async def crawl(page, url: str, depth: int):
         # CSV追記（都度書き込み）
         file_exists = os.path.exists(csv_path)
         with open(csv_path, "a", newline="", encoding="utf-8") as csvfile:
-            fieldnames = ["url", "case_id", "depth", "title", "status_code", "content_length", "crawled_at"]
+            fieldnames = [
+                "url", "case_id", "depth", "title", "status_code",
+                "content_length", "link_count", "crawled_at"
+            ]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             if not file_exists:
                 writer.writeheader()
             writer.writerow(result_row)
 
         # 再帰クロール
-        for link in extract_links(content, url):
+        for link in unique_links:
             await crawl(page, link, depth + 1)
 
     except Exception as e:
