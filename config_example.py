@@ -10,3 +10,4 @@ START_URLS = [
     "https://example.com/"
 ]
 MAX_DEPTH = 1
+USE_USER_DATA = False
