@@ -8,7 +8,6 @@ from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 import playwright_config as pw_config
 
-# 保存ディレクトリ
 os.makedirs("html", exist_ok=True)
 os.makedirs("screenshots", exist_ok=True)
 
@@ -16,7 +15,7 @@ visited = set()
 results = []
 
 def sanitize_url(url: str) -> str:
-    url, _ = urldefrag(url)  # #以降を除去
+    url, _ = urldefrag(url)
     return url.strip()
 
 def generate_filename(url: str, ext: str) -> str:
@@ -72,20 +71,16 @@ async def crawl(page, url: str, depth: int):
     html_filename = os.path.join("html", generate_filename(url, "html"))
     screenshot_filename = os.path.join("screenshots", generate_filename(url, "png"))
 
-    # 同じページを使って処理
     html, status_code, content_length = await save_html(page, url, html_filename)
     if not html:
         return
 
-    # スクリーンショットも同じページで撮影
     await take_screenshot(page, url, screenshot_filename)
     
-    title = extract_title(html)
-
     results.append({
         "url": url,
         "depth": depth,
-        "title": title,
+        "title": extract_title(html),
         "html_file": os.path.basename(html_filename),
         "screenshot_file": os.path.basename(screenshot_filename),
         "status_code": status_code,
@@ -96,21 +91,19 @@ async def crawl(page, url: str, depth: int):
         await crawl(page, link, depth + 1)
 
 async def main(start_urls):
-    # ディレクトリが存在することを確認
     os.makedirs(pw_config.user_data_dir, exist_ok=True)
     
     async with async_playwright() as p:
-        # 設定を準備
         options = dict(pw_config.browser_context_options)
-        
-        # 永続的コンテキストを作成
         context = await p.chromium.launch_persistent_context(
             pw_config.user_data_dir, 
             **options
         )
-        
-        # すでにページが開いている場合はそれを使用、なければ新規作成
         page = context.pages[0] if context.pages else await context.new_page()
+
+        # 初期ページをローディング
+        await page.goto(config.LOGIN_URL)
+        await page.wait_for_selector(config.LOGIN_WAIT_SELECTOR)
         
         # 各URLを同じページでクロール
         for url in start_urls:

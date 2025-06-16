@@ -1,9 +1,4 @@
-"""
-Playwrightのグローバル設定ファイル
-"""
-
 import os
-import platform
 
 # ユーザーデータディレクトリのパス
 import os
@@ -30,9 +25,6 @@ browser_context_options = {
     "bypass_csp": True,      # コンテンツセキュリティポリシーをバイパス
 }
 
-# 互換性のために古い名前も維持
-browser_options = browser_context_options
-context_options = browser_context_options
 
 # タイムアウト設定（ミリ秒）
 timeouts = {
@@ -47,7 +39,7 @@ screenshot_options = {
     "type": "png",
 }
 
-# トレース設定（デバッグに役立つ）
+# トレース設定
 trace_options = {
     "screenshots": True,
     "snapshots": True,

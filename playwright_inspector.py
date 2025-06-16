@@ -32,7 +32,7 @@ async def main(url=None):
             **options
         )
         
-        # トレースを開始（デバッグ用）
+        # トレースを開始
         await context.tracing.start(**playwright_config.trace_options)
         
         # 新しいページを開く
