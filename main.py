@@ -40,10 +40,8 @@ def extract_links(html: str, base_url: str):
         # スキップ対象
         if not clean_url.startswith("http"):
             continue
-        if any(clean_url.endswith(ext) for ext in [".pdf", ".jpg", ".png", ".zip", ".exe"]):
-            continue
-        if clean_url.startswith(("mailto:", "tel:")):
-            continue
+        if any(clean_url.endswith(ext) for ext in [".pdf", ".jpg", ".png", ".zip", ".exe", ".csv", ".tsv", ".xls", ".xlsx", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".mp4", ".avi", ".mov", ".mp3", ".wav"]):
+            continue    
 
         yield clean_url
 
