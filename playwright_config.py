@@ -8,7 +8,7 @@ user_data_dir = os.path.join(script_dir, "user_data")
 
 launch_options = {
     "headless": False,
-    "slow_mo": 100,
+    "slow_mo": 200,
     "devtools": True,
 }
 

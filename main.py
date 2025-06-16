@@ -33,22 +33,24 @@ def generate_filename(url: str, ext: str) -> str:
 
 def extract_unique_links(html: str, base_url: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
-
     base_tag = soup.find("base", href=True)
     actual_base = base_tag["href"] if base_tag else base_url
 
     link_set = set()
     for a in soup.find_all("a", href=True):
         href = a['href']
+
+        parsed = urlparse(href)
+        if parsed.scheme in ["mailto", "tel", "javascript"]:
+            continue
+
         joined_url = urljoin(actual_base, href)
         clean_url = sanitize_url(joined_url)
 
-        # ホワイトリストチェック
         netloc = urlparse(clean_url).netloc
         if not any(netloc.endswith(allowed) for allowed in config.ALLOWED_DOMAINS):
             continue
 
-        # 除外ファイル拡張子
         if any(clean_url.endswith(ext) for ext in [
             ".pdf", ".jpg", ".png", ".zip", ".exe", ".csv", ".tsv", ".xls", ".xlsx",
             ".doc", ".docx", ".ppt", ".pptx", ".txt", ".mp4", ".avi", ".mov", ".mp3", ".wav"
@@ -73,7 +75,19 @@ async def crawl(page, url: str, depth: int, from_url: str = ""):
     screenshot_filename = os.path.join(screenshot_dir, f"{case_id}.png")
 
     try:
-        await page.goto(url, timeout=pw_config.timeouts['navigation_timeout'])
+        response = await page.goto(url, timeout=pw_config.timeouts['navigation_timeout'])
+        if not response:
+            print(f"[!] No response from {url}")
+            return
+
+        # リダイレクトチェーンの追跡
+        req = response.request
+        redirect_chain = []
+        while req:
+            redirect_chain.append(req.url)
+            req = req.redirected_from
+        redirect_chain = " → ".join(reversed(redirect_chain))
+
         content = await page.content()
 
         # HTML保存
@@ -85,15 +99,16 @@ async def crawl(page, url: str, depth: int, from_url: str = ""):
         await page.screenshot(**screenshot_opts)
 
         # 対象リンク抽出（重複なし）
-        unique_links = extract_unique_links(content, url)
+        unique_links = extract_unique_links(content, response.url)
 
         result_row = {
-            "url": url,
+            "url": url,  # 実際にcrawl()された入口URL
+            "redirect_chain": redirect_chain,
             "from_url": from_url,
             "case_id": case_id,
             "depth": depth,
             "title": extract_title(content),
-            "status_code": 200,
+            "status_code": response.status,
             "content_length": len(content),
             "link_count": len(unique_links),
             "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -105,8 +120,8 @@ async def crawl(page, url: str, depth: int, from_url: str = ""):
         file_exists = os.path.exists(csv_path)
         with open(csv_path, "a", newline="", encoding="utf-8") as csvfile:
             fieldnames = [
-                "url", "from_url", "case_id", "depth", "title", "status_code",
-                "content_length", "link_count", "crawled_at"
+                "url", "redirect_chain", "from_url", "case_id", "depth",
+                "title", "status_code", "content_length", "link_count", "crawled_at"
             ]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             if not file_exists:
