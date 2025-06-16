@@ -33,17 +33,22 @@ def generate_filename(url: str, ext: str) -> str:
 
 def extract_unique_links(html: str, base_url: str) -> list[str]:
     soup = BeautifulSoup(html, "html.parser")
+
+    base_tag = soup.find("base", href=True)
+    actual_base = base_tag["href"] if base_tag else base_url
+
     link_set = set()
     for a in soup.find_all("a", href=True):
         href = a['href']
-        joined_url = urljoin(base_url, href)
+        joined_url = urljoin(actual_base, href)
         clean_url = sanitize_url(joined_url)
 
-        if not clean_url.startswith("http"):
-            continue
+        # ホワイトリストチェック
         netloc = urlparse(clean_url).netloc
         if not any(netloc.endswith(allowed) for allowed in config.ALLOWED_DOMAINS):
             continue
+
+        # 除外ファイル拡張子
         if any(clean_url.endswith(ext) for ext in [
             ".pdf", ".jpg", ".png", ".zip", ".exe", ".csv", ".tsv", ".xls", ".xlsx",
             ".doc", ".docx", ".ppt", ".pptx", ".txt", ".mp4", ".avi", ".mov", ".mp3", ".wav"
