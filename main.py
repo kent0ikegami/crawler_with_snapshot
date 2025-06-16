@@ -54,9 +54,9 @@ async def crawl(page, url: str, depth: int):
         return
     visited.add(url)
     print(f"[+] Crawling: {url} (depth={depth})")
-
-    html_filename = os.path.join(html_dir, generate_filename(url, "html"))
-    screenshot_filename = os.path.join(screenshot_dir, generate_filename(url, "png"))
+    case_id = hashlib.md5(url.encode('utf-8')).hexdigest()
+    html_filename = os.path.join(html_dir, f"{case_id}.html")
+    screenshot_filename = os.path.join(screenshot_dir, f"{case_id}.png")
 
     try:
         await page.goto(url, timeout=pw_config.timeouts['navigation_timeout'])
@@ -73,10 +73,9 @@ async def crawl(page, url: str, depth: int):
         # 結果保存
         results.append({
             "url": url,
+            "case_id": case_id,
             "depth": depth,
             "title": extract_title(content),
-            "html_file": os.path.basename(html_filename),
-            "screenshot_file": os.path.basename(screenshot_filename),
             "status_code": 200,
             "content_length": len(content),
             "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -115,7 +114,7 @@ async def main(start_urls):
 
     # CSV出力
     with open(os.path.join(output_base_dir, "result.csv"), "w", newline="", encoding="utf-8") as csvfile:
-        fieldnames = ["url", "depth", "title", "html_file", "screenshot_file", "status_code", "content_length", "crawled_at"]
+        fieldnames = ["url", "case_id", "depth", "title", "status_code", "content_length", "crawled_at"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for row in results:
