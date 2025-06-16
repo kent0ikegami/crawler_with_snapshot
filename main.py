@@ -58,7 +58,7 @@ def extract_title(html: str):
     soup = BeautifulSoup(html, "html.parser")
     return soup.title.string.strip() if soup.title and soup.title.string else ""
 
-async def crawl(page, url: str, depth: int):
+async def crawl(page, url: str, depth: int, from_url: str = ""):
     if url in visited or depth > config.MAX_DEPTH:
         return
     visited.add(url)
@@ -79,11 +79,12 @@ async def crawl(page, url: str, depth: int):
         screenshot_opts = {**pw_config.screenshot_options, "path": screenshot_filename}
         await page.screenshot(**screenshot_opts)
 
-        # 対象リンク抽出
+        # 対象リンク抽出（重複なし）
         unique_links = extract_unique_links(content, url)
 
         result_row = {
             "url": url,
+            "from_url": from_url,
             "case_id": case_id,
             "depth": depth,
             "title": extract_title(content),
@@ -99,7 +100,7 @@ async def crawl(page, url: str, depth: int):
         file_exists = os.path.exists(csv_path)
         with open(csv_path, "a", newline="", encoding="utf-8") as csvfile:
             fieldnames = [
-                "url", "case_id", "depth", "title", "status_code",
+                "url", "from_url", "case_id", "depth", "title", "status_code",
                 "content_length", "link_count", "crawled_at"
             ]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -109,7 +110,7 @@ async def crawl(page, url: str, depth: int):
 
         # 再帰クロール
         for link in unique_links:
-            await crawl(page, link, depth + 1)
+            await crawl(page, link, depth + 1, from_url=url)
 
     except Exception as e:
         print(f"[!] Failed to process {url}: {e}")
@@ -135,7 +136,7 @@ async def main(start_urls):
             await page.wait_for_selector(config.LOGIN_WAIT_SELECTOR)
 
         for url in start_urls:
-            await crawl(page, url, depth=0)
+            await crawl(page, url, depth=0, from_url="")
 
         await context.close()
 
