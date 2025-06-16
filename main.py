@@ -7,10 +7,17 @@ import config
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 import playwright_config as pw_config
+from datetime import datetime
+
 
 # 出力ディレクトリ作成
-os.makedirs("html", exist_ok=True)
-os.makedirs("screenshots", exist_ok=True)
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+output_base_dir = os.path.join("results", timestamp)
+html_dir = os.path.join(output_base_dir, "html")
+screenshot_dir = os.path.join(output_base_dir, "screenshots")
+os.makedirs(html_dir, exist_ok=True)
+os.makedirs(screenshot_dir, exist_ok=True)
+
 
 visited = set()
 results = []
@@ -50,8 +57,8 @@ async def crawl(page, url: str, depth: int):
     visited.add(url)
     print(f"[+] Crawling: {url} (depth={depth})")
 
-    html_filename = os.path.join("html", generate_filename(url, "html"))
-    screenshot_filename = os.path.join("screenshots", generate_filename(url, "png"))
+    html_filename = os.path.join(html_dir, generate_filename(url, "html"))
+    screenshot_filename = os.path.join(screenshot_dir, generate_filename(url, "png"))
 
     try:
         await page.goto(url, timeout=pw_config.timeouts['navigation_timeout'])
@@ -108,7 +115,7 @@ async def main(start_urls):
         await context.close()
 
     # CSV出力
-    with open("result.csv", "w", newline="", encoding="utf-8") as csvfile:
+    with open(os.path.join(output_base_dir, "result.csv"), "w", newline="", encoding="utf-8") as csvfile:
         fieldnames = ["url", "depth", "title", "html_file", "screenshot_file", "status_code", "content_length"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
