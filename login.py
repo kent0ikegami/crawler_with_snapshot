@@ -5,17 +5,13 @@ import config
 import playwright_config as pw_config
 
 async def main():
-    # ディレクトリが存在することを確認
     os.makedirs(pw_config.user_data_dir, exist_ok=True)
     
     async with async_playwright() as p:
-        # 設定を準備
-        options = dict(pw_config.browser_context_options)
-        
-        # 永続的コンテキストを作成
         context = await p.chromium.launch_persistent_context(
             pw_config.user_data_dir,
-            **options
+            **pw_config.launch_options,
+            **pw_config.context_options
         )
         
         # 最初のページを取得
