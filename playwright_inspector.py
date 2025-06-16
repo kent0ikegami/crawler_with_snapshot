@@ -12,9 +12,6 @@ import config
 import playwright_config
 
 async def main(url=None):
-    # ディレクトリの作成
-    os.makedirs("videos", exist_ok=True)
-    os.makedirs("logs", exist_ok=True)
     
     print("Playwrightインスペクターを起動中...")
     
@@ -67,12 +64,7 @@ async def main(url=None):
             await asyncio.sleep(6 * 60 * 60)
         except KeyboardInterrupt:
             print("\n操作を終了します...")
-        
-        # トレースを終了して保存
-        await context.tracing.stop(path="logs/trace.zip")
-        print("トレースを logs/trace.zip に保存しました")
-        print("トレースを表示するには: playwright show-trace logs/trace.zip")
-        
+                
         # リソースをクリーンアップ
         await context.close()
 
