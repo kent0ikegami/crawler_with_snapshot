@@ -92,19 +92,27 @@ async def main(start_urls):
     os.makedirs(pw_config.user_data_dir, exist_ok=True)
     
     async with async_playwright() as p:
-        options = dict(pw_config.browser_context_options)
-        context = await p.chromium.launch_persistent_context(
-            pw_config.user_data_dir, 
-            **options
-        )
+        
+        
+        if config.USE_USER_DATA:
+            context = await p.chromium.launch_persistent_context(
+                pw_config.user_data_dir, 
+                **pw_config.launch_options,
+                **pw_config.context_options
+            )
+        else:
+            browser = await p.chromium.launch(**pw_config.launch_options)
+            context = await browser.new_context(**pw_config.context_options)
 
         # 初期ページ取得 or 新規作成
         if context.pages:
             page = context.pages[0]
         else:
             page = await context.new_page()
-        await page.goto(config.LOGIN_URL)
-        await page.wait_for_selector(config.LOGIN_WAIT_SELECTOR)
+
+        if config.USE_USER_DATA and hasattr(config, 'LOGIN_URL') and hasattr(config, 'LOGIN_WAIT_SELECTOR'):
+            await page.goto(config.LOGIN_URL)
+            await page.wait_for_selector(config.LOGIN_WAIT_SELECTOR)
 
         # 各URLクロール開始
         for url in start_urls:

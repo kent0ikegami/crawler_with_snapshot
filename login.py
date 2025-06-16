@@ -1,3 +1,4 @@
+import os
 import asyncio
 from playwright.async_api import async_playwright
 import config
@@ -5,7 +6,6 @@ import playwright_config as pw_config
 
 async def main():
     # ディレクトリが存在することを確認
-    import os
     os.makedirs(pw_config.user_data_dir, exist_ok=True)
     
     async with async_playwright() as p:
