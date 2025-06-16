@@ -92,8 +92,6 @@ async def main(start_urls):
     os.makedirs(pw_config.user_data_dir, exist_ok=True)
     
     async with async_playwright() as p:
-        
-        
         if config.USE_USER_DATA:
             context = await p.chromium.launch_persistent_context(
                 pw_config.user_data_dir, 
