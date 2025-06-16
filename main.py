@@ -9,15 +9,16 @@ from playwright.async_api import async_playwright
 import playwright_config as pw_config
 from datetime import datetime
 
-
-# 出力ディレクトリ作成
+# タイムスタンプ付き出力ディレクトリ
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 output_base_dir = os.path.join("results", timestamp)
 html_dir = os.path.join(output_base_dir, "html")
 screenshot_dir = os.path.join(output_base_dir, "screenshots")
+csv_path = os.path.join(output_base_dir, "result.csv")
+
+# 出力ディレクトリ作成
 os.makedirs(html_dir, exist_ok=True)
 os.makedirs(screenshot_dir, exist_ok=True)
-
 
 visited = set()
 results = []
@@ -37,11 +38,13 @@ def extract_links(html: str, base_url: str):
         joined_url = urljoin(base_url, href)
         clean_url = sanitize_url(joined_url)
 
-        # スキップ対象
         if not clean_url.startswith("http"):
             continue
-        if any(clean_url.endswith(ext) for ext in [".pdf", ".jpg", ".png", ".zip", ".exe", ".csv", ".tsv", ".xls", ".xlsx", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".mp4", ".avi", ".mov", ".mp3", ".wav"]):
-            continue    
+        if any(clean_url.endswith(ext) for ext in [
+            ".pdf", ".jpg", ".png", ".zip", ".exe", ".csv", ".tsv", ".xls", ".xlsx",
+            ".doc", ".docx", ".ppt", ".pptx", ".txt", ".mp4", ".avi", ".mov", ".mp3", ".wav"
+        ]):
+            continue
 
         yield clean_url
 
@@ -70,8 +73,7 @@ async def crawl(page, url: str, depth: int):
         screenshot_opts = {**pw_config.screenshot_options, "path": screenshot_filename}
         await page.screenshot(**screenshot_opts)
 
-        # 結果保存
-        results.append({
+        result_row = {
             "url": url,
             "case_id": case_id,
             "depth": depth,
@@ -79,7 +81,18 @@ async def crawl(page, url: str, depth: int):
             "status_code": 200,
             "content_length": len(content),
             "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
+        }
+
+        results.append(result_row)
+
+        # CSV追記（都度書き込み）
+        file_exists = os.path.exists(csv_path)
+        with open(csv_path, "a", newline="", encoding="utf-8") as csvfile:
+            fieldnames = ["url", "case_id", "depth", "title", "status_code", "content_length", "crawled_at"]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(result_row)
 
         # 再帰クロール
         for link in extract_links(content, url):
@@ -90,11 +103,11 @@ async def crawl(page, url: str, depth: int):
 
 async def main(start_urls):
     os.makedirs(pw_config.user_data_dir, exist_ok=True)
-    
+
     async with async_playwright() as p:
         if config.USE_USER_DATA:
             context = await p.chromium.launch_persistent_context(
-                pw_config.user_data_dir, 
+                pw_config.user_data_dir,
                 **pw_config.launch_options,
                 **pw_config.context_options
             )
@@ -102,29 +115,16 @@ async def main(start_urls):
             browser = await p.chromium.launch(**pw_config.launch_options)
             context = await browser.new_context(**pw_config.context_options)
 
-        # 初期ページ取得 or 新規作成
-        if context.pages:
-            page = context.pages[0]
-        else:
-            page = await context.new_page()
+        page = context.pages[0] if context.pages else await context.new_page()
 
         if config.USE_USER_DATA and hasattr(config, 'LOGIN_URL') and hasattr(config, 'LOGIN_WAIT_SELECTOR'):
             await page.goto(config.LOGIN_URL)
             await page.wait_for_selector(config.LOGIN_WAIT_SELECTOR)
 
-        # 各URLクロール開始
         for url in start_urls:
             await crawl(page, url, depth=0)
 
         await context.close()
-
-    # CSV出力
-    with open(os.path.join(output_base_dir, "result.csv"), "w", newline="", encoding="utf-8") as csvfile:
-        fieldnames = ["url", "case_id", "depth", "title", "status_code", "content_length", "crawled_at"]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in results:
-            writer.writerow(row)
 
 if __name__ == "__main__":
     asyncio.run(main(config.START_URLS))
