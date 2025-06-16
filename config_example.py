@@ -11,3 +11,6 @@ START_URLS = [
 ]
 MAX_DEPTH = 1
 USE_USER_DATA = False
+ALLOWED_DOMAINS = [
+    "example.com",
+]

@@ -2,7 +2,7 @@ import os
 import csv
 import hashlib
 import asyncio
-from urllib.parse import urljoin, urldefrag
+from urllib.parse import urljoin, urldefrag, urlparse
 import config
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
@@ -39,6 +39,9 @@ def extract_links(html: str, base_url: str):
         clean_url = sanitize_url(joined_url)
 
         if not clean_url.startswith("http"):
+            continue
+        netloc = urlparse(clean_url).netloc
+        if not any(netloc.endswith(allowed) for allowed in config.ALLOWED_DOMAINS):
             continue
         if any(clean_url.endswith(ext) for ext in [
             ".pdf", ".jpg", ".png", ".zip", ".exe", ".csv", ".tsv", ".xls", ".xlsx",
