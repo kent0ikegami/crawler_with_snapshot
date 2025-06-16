@@ -80,7 +80,8 @@ async def crawl(page, url: str, depth: int):
             "html_file": os.path.basename(html_filename),
             "screenshot_file": os.path.basename(screenshot_filename),
             "status_code": 200,
-            "content_length": len(content)
+            "content_length": len(content),
+            "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         })
 
         # 再帰クロール
@@ -116,7 +117,7 @@ async def main(start_urls):
 
     # CSV出力
     with open(os.path.join(output_base_dir, "result.csv"), "w", newline="", encoding="utf-8") as csvfile:
-        fieldnames = ["url", "depth", "title", "html_file", "screenshot_file", "status_code", "content_length"]
+        fieldnames = ["url", "depth", "title", "html_file", "screenshot_file", "status_code", "content_length", "crawled_at"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
         for row in results:
