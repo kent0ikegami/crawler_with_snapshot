@@ -44,6 +44,11 @@ def extract_unique_links(html: str, base_url: str) -> list[str]:
     link_set = set()
     for a in soup.find_all("a", href=True):
         href = a['href']
+
+        text = a.get_text(strip=True) or ""
+        if any(keyword in text for keyword in [">エントリー<", ">申し込む<", ">検討リスト登録<"]):
+            continue
+
         parsed = urlparse(href)
         if parsed.scheme in ["mailto", "tel", "javascript"]:
             continue
