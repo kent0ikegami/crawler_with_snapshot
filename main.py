@@ -3,11 +3,11 @@ import csv
 import hashlib
 import asyncio
 from urllib.parse import urljoin, urldefrag, urlparse
+from datetime import datetime
 import config
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 import playwright_config as pw_config
-from datetime import datetime
 
 # タイムスタンプ付き出力ディレクトリ
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -22,6 +22,11 @@ os.makedirs(screenshot_dir, exist_ok=True)
 
 visited = set()
 results = []
+
+CSV_FIELDS = [
+    "url", "redirect_chain", "from_url", "case_id", "depth",
+    "title", "status_code", "content_length", "link_count", "crawled_at", "error_message"
+]
 
 def sanitize_url(url: str) -> str:
     url, _ = urldefrag(url)
@@ -39,7 +44,6 @@ def extract_unique_links(html: str, base_url: str) -> list[str]:
     link_set = set()
     for a in soup.find_all("a", href=True):
         href = a['href']
-
         parsed = urlparse(href)
         if parsed.scheme in ["mailto", "tel", "javascript"]:
             continue
@@ -61,9 +65,17 @@ def extract_unique_links(html: str, base_url: str) -> list[str]:
 
     return list(link_set)
 
-def extract_title(html: str):
+def extract_title(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
     return soup.title.string.strip() if soup.title and soup.title.string else ""
+
+def write_csv_row(row: dict):
+    file_exists = os.path.exists(csv_path)
+    with open(csv_path, "a", newline="", encoding="utf-8") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=CSV_FIELDS)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
 
 async def crawl(page, url: str, depth: int, from_url: str = ""):
     if url in visited or depth > config.MAX_DEPTH:
@@ -77,33 +89,28 @@ async def crawl(page, url: str, depth: int, from_url: str = ""):
     try:
         response = await page.goto(url, timeout=pw_config.timeouts['navigation_timeout'])
         if not response:
-            print(f"[!] No response from {url}")
-            return
+            raise Exception("No response received")
 
-        # リダイレクトチェーンの追跡
         req = response.request
         redirect_chain = []
         while req:
             redirect_chain.append(req.url)
             req = req.redirected_from
-        redirect_chain = " → ".join(reversed(redirect_chain))
+        redirect_chain_str = " → ".join(reversed(redirect_chain))
 
         content = await page.content()
 
-        # HTML保存
         with open(html_filename, "w", encoding="utf-8") as f:
             f.write(content)
 
-        # スクリーンショット
         screenshot_opts = {**pw_config.screenshot_options, "path": screenshot_filename}
         await page.screenshot(**screenshot_opts)
 
-        # 対象リンク抽出（重複なし）
         unique_links = extract_unique_links(content, response.url)
 
-        result_row = {
-            "url": url,  # 実際にcrawl()された入口URL
-            "redirect_chain": redirect_chain,
+        row = {
+            "url": url,
+            "redirect_chain": redirect_chain_str,
             "from_url": from_url,
             "case_id": case_id,
             "depth": depth,
@@ -111,29 +118,31 @@ async def crawl(page, url: str, depth: int, from_url: str = ""):
             "status_code": response.status,
             "content_length": len(content),
             "link_count": len(unique_links),
-            "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "error_message": ""
         }
+        results.append(row)
+        write_csv_row(row)
 
-        results.append(result_row)
-
-        # CSV追記（都度書き込み）
-        file_exists = os.path.exists(csv_path)
-        with open(csv_path, "a", newline="", encoding="utf-8") as csvfile:
-            fieldnames = [
-                "url", "redirect_chain", "from_url", "case_id", "depth",
-                "title", "status_code", "content_length", "link_count", "crawled_at"
-            ]
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            if not file_exists:
-                writer.writeheader()
-            writer.writerow(result_row)
-
-        # 再帰クロール
         for link in unique_links:
             await crawl(page, link, depth + 1, from_url=url)
 
     except Exception as e:
         print(f"[!] Failed to process {url}: {e}")
+        row = {
+            "url": url,
+            "redirect_chain": "",
+            "from_url": from_url,
+            "case_id": case_id,
+            "depth": depth,
+            "title": "",
+            "status_code": "ERROR",
+            "content_length": 0,
+            "link_count": 0,
+            "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "error_message": str(e)
+        }
+        write_csv_row(row)
 
 async def main(start_urls):
     os.makedirs(pw_config.user_data_dir, exist_ok=True)
