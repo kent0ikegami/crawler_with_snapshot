@@ -46,7 +46,7 @@ def extract_unique_links(html: str, base_url: str) -> list[str]:
         href = a['href']
 
         text = a.get_text(strip=True) or ""
-        if any(keyword in text for keyword in [">エントリー<", ">申し込む<", ">検討リスト登録<"]):
+        if hasattr(config, 'SKIP_LINK_KEYWORDS') and any(keyword in text for keyword in config.SKIP_LINK_KEYWORDS):
             continue
 
         parsed = urlparse(href)
@@ -93,10 +93,15 @@ async def crawl(page, url: str, depth: int, from_url: str = ""):
 
     try:
         response = await page.goto(url, timeout=pw_config.timeouts['navigation_timeout'])
-        await page.wait_for_function(
-            """() => !document.body.innerText.includes('接続中です')""",
-            timeout=10000
-        )
+        
+        # "読み込み中..."などのjs制御をwaitする
+        if hasattr(config, 'WAIT_FOR_TEXT_TO_DISAPPEAR') and config.WAIT_FOR_TEXT_TO_DISAPPEAR:
+            wait_text = config.WAIT_FOR_TEXT_TO_DISAPPEAR
+            await page.wait_for_function(
+                f"""() => !document.body.innerText.includes('{wait_text}')""",
+                timeout=10000
+            )
+            
         if not response:
             raise Exception("No response received")
 
