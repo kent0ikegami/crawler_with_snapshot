@@ -88,6 +88,10 @@ async def crawl(page, url: str, depth: int, from_url: str = ""):
 
     try:
         response = await page.goto(url, timeout=pw_config.timeouts['navigation_timeout'])
+        await page.wait_for_function(
+            """() => !document.body.innerText.includes('接続中です')""",
+            timeout=10000
+        )
         if not response:
             raise Exception("No response received")
 
