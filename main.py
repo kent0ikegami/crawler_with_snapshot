@@ -4,29 +4,28 @@ import hashlib
 import asyncio
 from urllib.parse import urljoin, urldefrag, urlparse
 from datetime import datetime
+from collections import defaultdict, deque
 import config
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 import playwright_config as pw_config
 
-# タイムスタンプ付き出力ディレクトリ
+# 出力先ディレクトリ作成
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 output_base_dir = os.path.join("results", timestamp)
 html_dir = os.path.join(output_base_dir, "html")
 screenshot_dir = os.path.join(output_base_dir, "screenshots")
 csv_path = os.path.join(output_base_dir, "result.csv")
-
 os.makedirs(html_dir, exist_ok=True)
 os.makedirs(screenshot_dir, exist_ok=True)
-
-visited = set()
-results = []
 
 CSV_FIELDS = [
     "url", "redirect_chain", "from_url", "case_id", "depth",
     "title", "status_code", "content_length", "link_count",
     "crawled_at", "error_message", "anchor_html"
 ]
+
+visited = set()
 
 def sanitize_url(url: str) -> str:
     url, _ = urldefrag(url)
@@ -84,10 +83,11 @@ def write_csv_row(row: dict):
             writer.writeheader()
         writer.writerow(row)
 
-async def crawl(page, url: str, depth: int, from_url: str = "", from_anchor_html: str = ""):
-    if url in visited or depth > config.MAX_DEPTH:
-        return
+async def crawl_single_page(page, url: str, depth: int, from_url: str = "", from_anchor_html: str = "") -> dict:
+    if url in visited:
+        return {}
     visited.add(url)
+
     print(f"[+] Crawling: {url} (depth={depth})")
     case_id = hashlib.md5(url.encode('utf-8')).hexdigest()
     html_filename = os.path.join(html_dir, f"{case_id}.html")
@@ -137,11 +137,8 @@ async def crawl(page, url: str, depth: int, from_url: str = "", from_anchor_html
             "error_message": "",
             "anchor_html": from_anchor_html or ""
         }
-        results.append(row)
         write_csv_row(row)
-
-        for link_url, anchor_html in link_map.items():
-            await crawl(page, link_url, depth + 1, from_url=url, from_anchor_html=anchor_html)
+        return link_map
 
     except Exception as e:
         print(f"[!] Failed to process {url}: {e}")
@@ -160,6 +157,20 @@ async def crawl(page, url: str, depth: int, from_url: str = "", from_anchor_html
             "anchor_html": from_anchor_html or ""
         }
         write_csv_row(row)
+        return {}
+
+async def crawl_bfs(page, start_urls):
+    queue = defaultdict(deque)
+    queue[0].extend((url, "", "") for url in start_urls)  # (url, from_url, anchor_html)
+    max_depth = config.MAX_DEPTH
+
+    for depth in range(max_depth + 1):
+        while queue[depth]:
+            url, from_url, anchor_html = queue[depth].popleft()
+            link_map = await crawl_single_page(page, url, depth, from_url, anchor_html)
+            for next_url, next_anchor_html in link_map.items():
+                if next_url not in visited:
+                    queue[depth + 1].append((next_url, url, next_anchor_html))
 
 async def main(start_urls):
     os.makedirs(pw_config.user_data_dir, exist_ok=True)
@@ -181,8 +192,7 @@ async def main(start_urls):
             await page.goto(config.LOGIN_URL)
             await page.wait_for_selector(config.LOGIN_WAIT_SELECTOR)
 
-        for url in start_urls:
-            await crawl(page, url, depth=0, from_url="")
+        await crawl_bfs(page, start_urls)
 
         await context.close()
 
