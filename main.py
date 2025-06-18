@@ -16,7 +16,6 @@ html_dir = os.path.join(output_base_dir, "html")
 screenshot_dir = os.path.join(output_base_dir, "screenshots")
 csv_path = os.path.join(output_base_dir, "result.csv")
 
-# 出力ディレクトリ作成
 os.makedirs(html_dir, exist_ok=True)
 os.makedirs(screenshot_dir, exist_ok=True)
 
@@ -25,7 +24,8 @@ results = []
 
 CSV_FIELDS = [
     "url", "redirect_chain", "from_url", "case_id", "depth",
-    "title", "status_code", "content_length", "link_count", "crawled_at", "error_message"
+    "title", "status_code", "content_length", "link_count",
+    "crawled_at", "error_message", "anchor_html"
 ]
 
 def sanitize_url(url: str) -> str:
@@ -36,14 +36,15 @@ def generate_filename(url: str, ext: str) -> str:
     h = hashlib.md5(url.encode('utf-8')).hexdigest()
     return f"{h}.{ext}"
 
-def extract_unique_links(html: str, base_url: str) -> list[str]:
+def extract_unique_links(html: str, base_url: str) -> dict[str, str]:
     soup = BeautifulSoup(html, "html.parser")
     base_tag = soup.find("base", href=True)
     actual_base = base_tag["href"] if base_tag else base_url
 
-    link_set = set()
+    link_map = {}
     for a in soup.find_all("a", href=True):
         href = a['href']
+        html_snippet = str(a)
 
         text = a.get_text(strip=True) or ""
         if hasattr(config, 'SKIP_LINK_KEYWORDS') and any(keyword in text for keyword in config.SKIP_LINK_KEYWORDS):
@@ -66,9 +67,10 @@ def extract_unique_links(html: str, base_url: str) -> list[str]:
         ]):
             continue
 
-        link_set.add(clean_url)
+        if clean_url not in link_map:
+            link_map[clean_url] = html_snippet
 
-    return list(link_set)
+    return link_map
 
 def extract_title(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
@@ -82,7 +84,7 @@ def write_csv_row(row: dict):
             writer.writeheader()
         writer.writerow(row)
 
-async def crawl(page, url: str, depth: int, from_url: str = ""):
+async def crawl(page, url: str, depth: int, from_url: str = "", from_anchor_html: str = ""):
     if url in visited or depth > config.MAX_DEPTH:
         return
     visited.add(url)
@@ -93,15 +95,14 @@ async def crawl(page, url: str, depth: int, from_url: str = ""):
 
     try:
         response = await page.goto(url, timeout=pw_config.timeouts['navigation_timeout'])
-        
-        # "読み込み中..."などのjs制御をwaitする
+
         if hasattr(config, 'WAIT_FOR_TEXT_TO_DISAPPEAR') and config.WAIT_FOR_TEXT_TO_DISAPPEAR:
             wait_text = config.WAIT_FOR_TEXT_TO_DISAPPEAR
             await page.wait_for_function(
                 f"""() => !document.body.innerText.includes('{wait_text}')""",
                 timeout=10000
             )
-            
+
         if not response:
             raise Exception("No response received")
 
@@ -120,7 +121,7 @@ async def crawl(page, url: str, depth: int, from_url: str = ""):
         screenshot_opts = {**pw_config.screenshot_options, "path": screenshot_filename}
         await page.screenshot(**screenshot_opts)
 
-        unique_links = extract_unique_links(content, response.url)
+        link_map = extract_unique_links(content, response.url)
 
         row = {
             "url": url,
@@ -131,15 +132,16 @@ async def crawl(page, url: str, depth: int, from_url: str = ""):
             "title": extract_title(content),
             "status_code": response.status,
             "content_length": len(content),
-            "link_count": len(unique_links),
+            "link_count": len(link_map),
             "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "error_message": ""
+            "error_message": "",
+            "anchor_html": from_anchor_html or ""
         }
         results.append(row)
         write_csv_row(row)
 
-        for link in unique_links:
-            await crawl(page, link, depth + 1, from_url=url)
+        for link_url, anchor_html in link_map.items():
+            await crawl(page, link_url, depth + 1, from_url=url, from_anchor_html=anchor_html)
 
     except Exception as e:
         print(f"[!] Failed to process {url}: {e}")
@@ -154,7 +156,8 @@ async def crawl(page, url: str, depth: int, from_url: str = ""):
             "content_length": 0,
             "link_count": 0,
             "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "error_message": str(e)
+            "error_message": str(e),
+            "anchor_html": from_anchor_html or ""
         }
         write_csv_row(row)
 
