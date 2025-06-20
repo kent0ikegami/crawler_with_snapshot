@@ -20,20 +20,32 @@ os.makedirs(html_dir, exist_ok=True)
 os.makedirs(screenshot_dir, exist_ok=True)
 
 CSV_FIELDS = [
-    "url", "redirect_chain", "from_url", "case_id", "depth",
-    "title", "status_code", "content_length", "link_count",
-    "crawled_at", "error_message", "anchor_html"
+    "url",
+    "redirect_chain",
+    "from_url",
+    "case_id",
+    "depth",
+    "title",
+    "status_code",
+    "content_length",
+    "link_count",
+    "crawled_at",
+    "error_message",
+    "anchor_html",
 ]
 
 visited = set()
+
 
 def sanitize_url(url: str) -> str:
     url, _ = urldefrag(url)
     return url.strip()
 
+
 def generate_filename(url: str, ext: str) -> str:
-    h = hashlib.md5(url.encode('utf-8')).hexdigest()
+    h = hashlib.md5(url.encode("utf-8")).hexdigest()
     return f"{h}.{ext}"
+
 
 def extract_unique_links(html: str, base_url: str) -> dict[str, str]:
     soup = BeautifulSoup(html, "html.parser")
@@ -42,38 +54,55 @@ def extract_unique_links(html: str, base_url: str) -> dict[str, str]:
 
     link_map = {}
     for a in soup.find_all("a", href=True):
-        href = a['href']
+        href = a["href"]
         html_snippet = str(a)
-
         text = a.get_text(strip=True) or ""
-        if hasattr(config, 'SKIP_LINK_KEYWORDS') and any(keyword in text for keyword in config.SKIP_LINK_KEYWORDS):
+        if hasattr(config, "SKIP_LINK_KEYWORDS") and any(
+            keyword in text for keyword in config.SKIP_LINK_KEYWORDS
+        ):
             continue
-
         parsed = urlparse(href)
         if parsed.scheme in ["mailto", "tel", "javascript"]:
             continue
-
         joined_url = urljoin(actual_base, href)
         clean_url = sanitize_url(joined_url)
-
         netloc = urlparse(clean_url).netloc
         if not any(netloc.endswith(allowed) for allowed in config.ALLOWED_DOMAINS):
             continue
-
-        if any(clean_url.endswith(ext) for ext in [
-            ".pdf", ".jpg", ".png", ".zip", ".exe", ".csv", ".tsv", ".xls", ".xlsx",
-            ".doc", ".docx", ".ppt", ".pptx", ".txt", ".mp4", ".avi", ".mov", ".mp3", ".wav"
-        ]):
+        if any(
+            clean_url.endswith(ext)
+            for ext in [
+                ".pdf",
+                ".jpg",
+                ".png",
+                ".zip",
+                ".exe",
+                ".csv",
+                ".tsv",
+                ".xls",
+                ".xlsx",
+                ".doc",
+                ".docx",
+                ".ppt",
+                ".pptx",
+                ".txt",
+                ".mp4",
+                ".avi",
+                ".mov",
+                ".mp3",
+                ".wav",
+            ]
+        ):
             continue
-
         if clean_url not in link_map:
             link_map[clean_url] = html_snippet
-
     return link_map
+
 
 def extract_title(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
     return soup.title.string.strip() if soup.title and soup.title.string else ""
+
 
 def write_csv_row(row: dict):
     file_exists = os.path.exists(csv_path)
@@ -83,24 +112,31 @@ def write_csv_row(row: dict):
             writer.writeheader()
         writer.writerow(row)
 
-async def crawl_single_page(page, url: str, depth: int, from_url: str = "", from_anchor_html: str = "") -> dict:
+
+async def crawl_single_page(
+    page, url: str, depth: int, from_url: str = "", from_anchor_html: str = ""
+) -> dict:
     if url in visited:
         return {}
     visited.add(url)
 
-    print(f"[+] Crawling: {url} (depth={depth})")
-    case_id = hashlib.md5(url.encode('utf-8')).hexdigest()
+    case_id = hashlib.md5(url.encode("utf-8")).hexdigest()
     html_filename = os.path.join(html_dir, f"{case_id}.html")
     screenshot_filename = os.path.join(screenshot_dir, f"{case_id}.png")
 
     try:
-        response = await page.goto(url, timeout=pw_config.timeouts['navigation_timeout'])
+        response = await page.goto(
+            url, timeout=pw_config.timeouts["navigation_timeout"]
+        )
 
-        if hasattr(config, 'WAIT_FOR_TEXT_TO_DISAPPEAR') and config.WAIT_FOR_TEXT_TO_DISAPPEAR:
+        if (
+            hasattr(config, "WAIT_FOR_TEXT_TO_DISAPPEAR")
+            and config.WAIT_FOR_TEXT_TO_DISAPPEAR
+        ):
             wait_text = config.WAIT_FOR_TEXT_TO_DISAPPEAR
             await page.wait_for_function(
                 f"""() => !document.body.innerText.includes('{wait_text}')""",
-                timeout=10000
+                timeout=10000,
             )
 
         if not response:
@@ -135,13 +171,12 @@ async def crawl_single_page(page, url: str, depth: int, from_url: str = "", from
             "link_count": len(link_map),
             "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "error_message": "",
-            "anchor_html": from_anchor_html or ""
+            "anchor_html": from_anchor_html or "",
         }
         write_csv_row(row)
         return link_map
 
     except Exception as e:
-        print(f"[!] Failed to process {url}: {e}")
         row = {
             "url": url,
             "redirect_chain": "",
@@ -154,10 +189,11 @@ async def crawl_single_page(page, url: str, depth: int, from_url: str = "", from
             "link_count": 0,
             "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "error_message": str(e),
-            "anchor_html": from_anchor_html or ""
+            "anchor_html": from_anchor_html or "",
         }
         write_csv_row(row)
         return {}
+
 
 async def crawl_bfs(page, start_urls):
     queue = defaultdict(deque)
@@ -166,11 +202,17 @@ async def crawl_bfs(page, start_urls):
 
     for depth in range(max_depth + 1):
         while queue[depth]:
+            url, from_url, anchor_html = queue[depth][0]  # peek
+            total_queue = sum(len(q) for q in queue.values())
+            print(
+                f"[depth={depth}] queue={len(queue[depth])} total_queue={total_queue} visited={len(visited)} → {url}"
+            )
             url, from_url, anchor_html = queue[depth].popleft()
             link_map = await crawl_single_page(page, url, depth, from_url, anchor_html)
             for next_url, next_anchor_html in link_map.items():
                 if next_url not in visited:
                     queue[depth + 1].append((next_url, url, next_anchor_html))
+
 
 async def main(start_urls):
     os.makedirs(pw_config.user_data_dir, exist_ok=True)
@@ -180,7 +222,7 @@ async def main(start_urls):
             context = await p.chromium.launch_persistent_context(
                 pw_config.user_data_dir,
                 **pw_config.launch_options,
-                **pw_config.context_options
+                **pw_config.context_options,
             )
         else:
             browser = await p.chromium.launch(**pw_config.launch_options)
@@ -188,13 +230,19 @@ async def main(start_urls):
 
         page = context.pages[0] if context.pages else await context.new_page()
 
-        if config.USE_USER_DATA and hasattr(config, 'LOGIN_URL') and hasattr(config, 'LOGIN_WAIT_SELECTOR'):
+        if (
+            config.USE_USER_DATA
+            and config.USE_USER_DATA_AND_LOGIN
+            and hasattr(config, "LOGIN_URL")
+            and hasattr(config, "LOGIN_WAIT_SELECTOR")
+        ):
             await page.goto(config.LOGIN_URL)
             await page.wait_for_selector(config.LOGIN_WAIT_SELECTOR)
 
         await crawl_bfs(page, start_urls)
 
         await context.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main(config.START_URLS))
