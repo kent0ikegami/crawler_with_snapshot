@@ -6,11 +6,12 @@ PASSWORD_SELECTOR = "#password"
 SUBMIT_SELECTOR = "button[type=submit]"
 LOGIN_SUCCESS_URL_PATTERN = "**/dashboard"
 LOGIN_WAIT_SELECTOR = "#welcomeMessage"
-START_URLS = [
-    "https://example.com/"
-]
+START_URLS = ["https://example.com/"]
 MAX_DEPTH = 1
-USE_USER_DATA = False
+USE_USER_DATA = True
+USE_USER_DATA_AND_LOGIN = False
 ALLOWED_DOMAINS = [
     "example.com",
 ]
+SKIP_LINK_KEYWORDS = []
+WAIT_FOR_TEXT_TO_DISAPPEAR = ""
