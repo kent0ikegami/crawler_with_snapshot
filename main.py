@@ -66,6 +66,13 @@ def extract_unique_links(html: str, base_url: str) -> dict[str, str]:
             continue
         joined_url = urljoin(actual_base, href)
         clean_url = sanitize_url(joined_url)
+
+        # URLパターンによるスキップ処理
+        if hasattr(config, "SKIP_URL_PATTERNS") and any(
+            pattern in clean_url for pattern in config.SKIP_URL_PATTERNS
+        ):
+            continue
+
         netloc = urlparse(clean_url).netloc
         if not any(netloc.endswith(allowed) for allowed in config.ALLOWED_DOMAINS):
             continue
