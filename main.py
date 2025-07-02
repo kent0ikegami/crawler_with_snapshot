@@ -19,6 +19,7 @@ csv_path = os.path.join(output_base_dir, "result.csv")
 os.makedirs(html_dir, exist_ok=True)
 os.makedirs(screenshot_dir, exist_ok=True)
 
+# クロール結果のフィールド
 CSV_FIELDS = [
     "url",
     "redirect_chain",
@@ -34,7 +35,9 @@ CSV_FIELDS = [
     "anchor_html",
 ]
 
+# 重複防止用セット
 visited = set()
+queued = set()
 
 
 def sanitize_url(url: str) -> str:
@@ -67,7 +70,6 @@ def extract_unique_links(html: str, base_url: str) -> dict[str, str]:
         joined_url = urljoin(actual_base, href)
         clean_url = sanitize_url(joined_url)
 
-        # URLパターンによるスキップ処理
         if hasattr(config, "SKIP_URL_PATTERNS") and any(
             pattern in clean_url for pattern in config.SKIP_URL_PATTERNS
         ):
@@ -79,25 +81,9 @@ def extract_unique_links(html: str, base_url: str) -> dict[str, str]:
         if any(
             clean_url.endswith(ext)
             for ext in [
-                ".pdf",
-                ".jpg",
-                ".png",
-                ".zip",
-                ".exe",
-                ".csv",
-                ".tsv",
-                ".xls",
-                ".xlsx",
-                ".doc",
-                ".docx",
-                ".ppt",
-                ".pptx",
-                ".txt",
-                ".mp4",
-                ".avi",
-                ".mov",
-                ".mp3",
-                ".wav",
+                ".pdf", ".jpg", ".png", ".zip", ".exe", ".csv", ".tsv", ".xls",
+                ".xlsx", ".doc", ".docx", ".ppt", ".pptx", ".txt", ".mp4", ".avi",
+                ".mov", ".mp3", ".wav",
             ]
         ):
             continue
@@ -118,6 +104,13 @@ def write_csv_row(row: dict):
         if not file_exists:
             writer.writeheader()
         writer.writerow(row)
+
+
+def log_status(depth: int, current_url: str, queue: defaultdict[int, deque]):
+    total_queue = sum(len(q) for q in queue.values())
+    print(
+        f"[depth={depth}] queue={len(queue[depth])} total_queue={total_queue} visited={len(visited)} → {current_url}"
+    )
 
 
 async def crawl_single_page(
@@ -202,23 +195,26 @@ async def crawl_single_page(
         return {}
 
 
-async def crawl_bfs(page, start_urls):
+async def crawl_bfs(page, start_urls: list[str]):
     queue = defaultdict(deque)
-    queue[0].extend((url, "", "") for url in start_urls)  # (url, from_url, anchor_html)
     max_depth = config.MAX_DEPTH
+
+    # 初期キュー投入（重複チェック付き）
+    for url in start_urls:
+        if url not in visited and url not in queued:
+            queue[0].append((url, "", ""))
+            queued.add(url)
 
     for depth in range(max_depth + 1):
         while queue[depth]:
-            url, from_url, anchor_html = queue[depth][0]  # peek
-            total_queue = sum(len(q) for q in queue.values())
-            print(
-                f"[depth={depth}] queue={len(queue[depth])} total_queue={total_queue} visited={len(visited)} → {url}"
-            )
             url, from_url, anchor_html = queue[depth].popleft()
+            log_status(depth, url, queue)
             link_map = await crawl_single_page(page, url, depth, from_url, anchor_html)
+
             for next_url, next_anchor_html in link_map.items():
-                if next_url not in visited:
+                if next_url not in visited and next_url not in queued:
                     queue[depth + 1].append((next_url, url, next_anchor_html))
+                    queued.add(next_url)
 
 
 async def main(start_urls):
