@@ -12,7 +12,12 @@ from playwright.async_api import async_playwright
 import playwright_config as pw_config
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--resume", type=str, metavar="DIR", help="Resume from existing directory (e.g., results/20250708_093000)")
+parser.add_argument(
+    "--resume",
+    type=str,
+    metavar="DIR",
+    help="Resume from existing directory (e.g., results/20250708_093000)",
+)
 args = parser.parse_args()
 
 # 出力先ディレクトリ
@@ -29,21 +34,33 @@ os.makedirs(html_dir, exist_ok=True)
 os.makedirs(screenshot_dir, exist_ok=True)
 
 CSV_FIELDS = [
-    "url", "redirect_chain", "from_url", "case_id", "depth", "title",
-    "status_code", "content_length", "link_count", "crawled_at",
-    "error_message", "anchor_html"
+    "url",
+    "redirect_chain",
+    "from_url",
+    "case_id",
+    "depth",
+    "title",
+    "status_code",
+    "content_length",
+    "link_count",
+    "crawled_at",
+    "error_message",
+    "anchor_html",
 ]
 
 visited = set()
 queued = set()
 
+
 def sanitize_url(url: str) -> str:
     url, _ = urldefrag(url)
     return url.strip()
 
+
 def generate_filename(url: str, ext: str) -> str:
     h = hashlib.md5(url.encode("utf-8")).hexdigest()
     return f"{h}.{ext}"
+
 
 def extract_unique_links(html: str, base_url: str) -> dict[str, str]:
     soup = BeautifulSoup(html, "html.parser")
@@ -54,29 +71,56 @@ def extract_unique_links(html: str, base_url: str) -> dict[str, str]:
         href = a["href"]
         html_snippet = str(a)
         text = a.get_text(strip=True) or ""
-        if hasattr(config, "SKIP_LINK_KEYWORDS") and any(k in text for k in config.SKIP_LINK_KEYWORDS):
+        if hasattr(config, "SKIP_LINK_KEYWORDS") and any(
+            k in text for k in config.SKIP_LINK_KEYWORDS
+        ):
             continue
         parsed = urlparse(href)
         if parsed.scheme in ["mailto", "tel", "javascript"]:
             continue
         joined_url = urljoin(actual_base, href)
         clean_url = sanitize_url(joined_url)
-        if hasattr(config, "SKIP_URL_PATTERNS") and any(p in clean_url for p in config.SKIP_URL_PATTERNS):
+        if hasattr(config, "SKIP_URL_PATTERNS") and any(
+            p in clean_url for p in config.SKIP_URL_PATTERNS
+        ):
             continue
         netloc = urlparse(clean_url).netloc
         if not any(netloc.endswith(allowed) for allowed in config.ALLOWED_DOMAINS):
             continue
-        if any(clean_url.endswith(ext) for ext in [
-            ".pdf", ".jpg", ".png", ".zip", ".exe", ".csv", ".tsv", ".xls", ".xlsx",
-            ".doc", ".docx", ".ppt", ".pptx", ".txt", ".mp4", ".avi", ".mov", ".mp3", ".wav"]):
+        if any(
+            clean_url.endswith(ext)
+            for ext in [
+                ".pdf",
+                ".jpg",
+                ".png",
+                ".zip",
+                ".exe",
+                ".csv",
+                ".tsv",
+                ".xls",
+                ".xlsx",
+                ".doc",
+                ".docx",
+                ".ppt",
+                ".pptx",
+                ".txt",
+                ".mp4",
+                ".avi",
+                ".mov",
+                ".mp3",
+                ".wav",
+            ]
+        ):
             continue
         if clean_url not in link_map:
             link_map[clean_url] = html_snippet
     return link_map
 
+
 def extract_title(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
     return soup.title.string.strip() if soup.title and soup.title.string else ""
+
 
 def write_csv_row(row: dict):
     file_exists = os.path.exists(csv_path)
@@ -86,9 +130,13 @@ def write_csv_row(row: dict):
             writer.writeheader()
         writer.writerow(row)
 
+
 def log_status(depth: int, current_url: str, queue: defaultdict[int, deque]):
     total_queue = sum(len(q) for q in queue.values())
-    print(f"[depth={depth}] queue={len(queue[depth])} total_queue={total_queue} visited={len(visited)} → {current_url}")
+    print(
+        f"[depth={depth}] queue={len(queue[depth])} total_queue={total_queue} visited={len(visited)} → {current_url}"
+    )
+
 
 def restore_state_from_csv(csv_path: str):
     visited_urls = set()
@@ -106,6 +154,7 @@ def restore_state_from_csv(csv_path: str):
             if depth and depth.isdigit():
                 max_depth = max(max_depth, int(depth))
     return visited_urls, queued_urls, max_depth
+
 
 def get_urls_to_resume(depth: int) -> list[tuple[str, str, str]]:
     urls = []
@@ -130,7 +179,10 @@ def get_urls_to_resume(depth: int) -> list[tuple[str, str, str]]:
                 continue
     return urls
 
-async def crawl_single_page(page, url: str, depth: int, from_url: str = "", from_anchor_html: str = "") -> dict:
+
+async def crawl_single_page(
+    page, url: str, depth: int, from_url: str = "", from_anchor_html: str = ""
+) -> dict:
     if url in visited:
         return {}
     visited.add(url)
@@ -138,8 +190,13 @@ async def crawl_single_page(page, url: str, depth: int, from_url: str = "", from
     html_filename = os.path.join(html_dir, f"{case_id}.html")
     screenshot_filename = os.path.join(screenshot_dir, f"{case_id}.png")
     try:
-        response = await page.goto(url, timeout=pw_config.timeouts["navigation_timeout"])
-        if hasattr(config, "WAIT_FOR_TEXT_TO_DISAPPEAR") and config.WAIT_FOR_TEXT_TO_DISAPPEAR:
+        response = await page.goto(
+            url, timeout=pw_config.timeouts["navigation_timeout"]
+        )
+        if (
+            hasattr(config, "WAIT_FOR_TEXT_TO_DISAPPEAR")
+            and config.WAIT_FOR_TEXT_TO_DISAPPEAR
+        ):
             wait_text = config.WAIT_FOR_TEXT_TO_DISAPPEAR
             await page.wait_for_function(
                 f"""() => !document.body.innerText.includes('{wait_text}')""",
@@ -193,6 +250,7 @@ async def crawl_single_page(page, url: str, depth: int, from_url: str = "", from
         write_csv_row(row)
         return {}
 
+
 async def crawl_bfs(page, start_urls: list[str], start_depth: int = 0):
     queue = defaultdict(deque)
     max_depth = config.MAX_DEPTH
@@ -209,6 +267,7 @@ async def crawl_bfs(page, start_urls: list[str], start_depth: int = 0):
                 if next_url not in visited and next_url not in queued:
                     queue[depth + 1].append((next_url, url, next_anchor_html))
                     queued.add(next_url)
+
 
 async def main(start_urls, start_depth, visited_input, queued_input):
     global visited, queued
@@ -227,13 +286,24 @@ async def main(start_urls, start_depth, visited_input, queued_input):
             context = await browser.new_context(**pw_config.context_options)
         page = context.pages[0] if context.pages else await context.new_page()
         if (
-            config.USE_USER_DATA and config.USE_USER_DATA_AND_LOGIN
-            and hasattr(config, "LOGIN_URL") and hasattr(config, "LOGIN_WAIT_SELECTOR")
+            config.USE_USER_DATA
+            and config.USE_USER_DATA_AND_LOGIN
+            and hasattr(config, "LOGIN_URL")
+            and hasattr(config, "LOGIN_WAIT_SELECTOR")
         ):
             await page.goto(config.LOGIN_URL)
             await page.wait_for_selector(config.LOGIN_WAIT_SELECTOR)
+        if (
+            config.USE_USER_DATA
+            and config.USE_USER_DATA_AND_LOGIN
+            and hasattr(config, "LOGIN_URL2")
+            and hasattr(config, "LOGIN_WAIT_SELECTOR")
+        ):
+            await page.goto(config.LOGIN_URL2)
+            await page.wait_for_selector(config.LOGIN_WAIT_SELECTOR)
         await crawl_bfs(page, start_urls, start_depth=start_depth)
         await context.close()
+
 
 if __name__ == "__main__":
     if args.resume:
