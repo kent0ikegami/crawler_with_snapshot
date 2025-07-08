@@ -115,7 +115,7 @@ def get_urls_to_resume(depth: int) -> list[tuple[str, str, str]]:
         reader = csv.DictReader(csvfile)
         for row in reader:
             try:
-                if int(row.get("depth", -1)) == depth:
+                if int(row.get("depth", -1)) == depth - 1:
                     url = row.get("url")
                     case_id = row.get("case_id")
                     if url and case_id:
@@ -237,7 +237,8 @@ async def main(start_urls, start_depth, visited_input, queued_input):
 
 if __name__ == "__main__":
     if args.resume:
-        visited, queued, start_depth = restore_state_from_csv(csv_path)
+        visited, queued, max_depth = restore_state_from_csv(csv_path)
+        start_depth = max_depth + 1
         start_urls = get_urls_to_resume(start_depth)
     else:
         visited = set()
