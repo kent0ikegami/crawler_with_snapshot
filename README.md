@@ -13,6 +13,9 @@ python login.py
 
 ```bash
 python main.py
+
+# 再開
+python main.py --resume results/20250708_093000
 ```
 
 ## other
