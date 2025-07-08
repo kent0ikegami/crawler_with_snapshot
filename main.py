@@ -117,10 +117,15 @@ def get_urls_to_resume(depth: int) -> list[tuple[str, str, str]]:
             try:
                 if int(row.get("depth", -1)) == depth:
                     url = row.get("url")
-                    from_url = row.get("from_url")
-                    anchor_html = row.get("anchor_html")
-                    if url:
-                        urls.append((url, from_url or "", anchor_html or ""))
+                    case_id = row.get("case_id")
+                    if url and case_id:
+                        html_path = os.path.join(html_dir, f"{case_id}.html")
+                        if os.path.exists(html_path):
+                            with open(html_path, "r", encoding="utf-8") as f:
+                                html = f.read()
+                            link_map = extract_unique_links(html, url)
+                            for next_url, anchor_html in link_map.items():
+                                urls.append((next_url, url, anchor_html))
             except ValueError:
                 continue
     return urls
