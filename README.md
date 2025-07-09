@@ -16,6 +16,7 @@ python main.py
 
 # 再開
 python main.py --resume results/20250708_093000
+python main.py --retry results/20250709_115006
 ```
 
 ## other

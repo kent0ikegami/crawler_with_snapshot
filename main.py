@@ -48,21 +48,13 @@ SKIP_EXTENSIONS = [
     ".wav",
 ]
 
-# === Argument & Output Setup ===
+# === Argument Setup ===
 parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--resume", type=str, metavar="DIR", help="Resume from existing directory"
-)
+parser.add_argument("--resume", type=str, metavar="DIR", help="Resume crawl")
+parser.add_argument("--retry", type=str, metavar="DIR", help="Retry ERROR rows")
 args = parser.parse_args()
-output_base_dir = args.resume or os.path.join(
-    "results", datetime.now().strftime("%Y%m%d_%H%M%S")
-)
-html_dir = os.path.join(output_base_dir, "html")
-screenshot_dir = os.path.join(output_base_dir, "screenshots")
-csv_path = os.path.join(output_base_dir, "result.csv")
-os.makedirs(html_dir, exist_ok=True)
-os.makedirs(screenshot_dir, exist_ok=True)
 
+# === Global State ===
 visited, queued = set(), set()
 
 
@@ -75,28 +67,19 @@ def should_skip_extension(url: str) -> bool:
     return any(url.lower().endswith(ext) for ext in SKIP_EXTENSIONS)
 
 
-def generate_filename(url: str, ext: str) -> str:
-    return f"{hashlib.md5(url.encode()).hexdigest()}.{ext}"
+def generate_case_id(url: str) -> str:
+    return hashlib.md5(url.encode()).hexdigest()
 
 
-def save_html(case_id: str, html: str):
-    with open(os.path.join(html_dir, f"{case_id}.html"), "w", encoding="utf-8") as f:
+def save_html(path: str, html: str):
+    with open(path, "w", encoding="utf-8") as f:
         f.write(html)
 
 
-def load_html(case_id: str) -> str | None:
-    path = os.path.join(html_dir, f"{case_id}.html")
+def load_html(path: str) -> str | None:
     return open(path, encoding="utf-8").read() if os.path.exists(path) else None
 
 
-def log_status(depth: int, url: str, queue: defaultdict[int, deque]):
-    total = sum(len(q) for q in queue.values())
-    print(
-        f"[depth={depth}] queue={len(queue[depth])} total_queue={total} visited={len(visited)} → {url}"
-    )
-
-
-# === HTML Processing ===
 def extract_title(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
     return soup.title.string.strip() if soup.title and soup.title.string else ""
@@ -109,13 +92,11 @@ def extract_unique_links(html: str, base_url: str) -> dict[str, str]:
     link_map = {}
     for a in soup.find_all("a", href=True):
         href = a["href"]
-        text = a.get_text(strip=True) or ""
         if hasattr(config, "SKIP_LINK_KEYWORDS") and any(
-            k in text for k in config.SKIP_LINK_KEYWORDS
+            k in a.get_text(strip=True) for k in config.SKIP_LINK_KEYWORDS
         ):
             continue
-        parsed = urlparse(href)
-        if parsed.scheme in ["mailto", "tel", "javascript"]:
+        if urlparse(href).scheme in ["mailto", "tel", "javascript"]:
             continue
         joined_url = urljoin(actual_base, href)
         clean_url = sanitize_url(joined_url)
@@ -124,8 +105,7 @@ def extract_unique_links(html: str, base_url: str) -> dict[str, str]:
         ):
             continue
         if not any(
-            urlparse(clean_url).netloc.endswith(allowed)
-            for allowed in config.ALLOWED_DOMAINS
+            urlparse(clean_url).netloc.endswith(d) for d in config.ALLOWED_DOMAINS
         ):
             continue
         if should_skip_extension(clean_url):
@@ -135,14 +115,22 @@ def extract_unique_links(html: str, base_url: str) -> dict[str, str]:
     return link_map
 
 
-# === CSV Handling ===
-def write_csv_row(row: dict):
-    file_exists = os.path.exists(csv_path)
-    with open(csv_path, "a", newline="", encoding="utf-8") as f:
+def log_status(depth: int, url: str, queue: defaultdict[int, deque]):
+    print(
+        f"[depth={depth}] queue={len(queue[depth])} total_queue={sum(len(q) for q in queue.values())} visited={len(visited)} → {url}"
+    )
+
+
+def read_csv(path: str) -> list[dict]:
+    with open(path, "r", encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+def write_csv(path: str, rows: list[dict]):
+    with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(row)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def restore_state_from_csv(path: str):
@@ -160,33 +148,13 @@ def restore_state_from_csv(path: str):
     return visited_urls, set(), max_depth
 
 
-def get_urls_to_resume(depth: int) -> list[tuple[str, str, str]]:
-    urls = []
-    if not os.path.exists(csv_path):
-        return urls
-    with open(csv_path, "r", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            if int(row.get("depth", -1)) == depth - 1:
-                url = row.get("url")
-                case_id = row.get("case_id")
-                if url and case_id:
-                    html = load_html(case_id)
-                    if html:
-                        for next_url, a_html in extract_unique_links(html, url).items():
-                            urls.append((next_url, url, a_html))
-    return urls
-
-
-# === Core Crawl Logic ===
+# === Crawl Functions ===
 async def crawl_single_page(
-    page, url: str, depth: int, from_url="", from_anchor_html=""
+    page, url: str, depth: int, from_url="", from_anchor_html="", output_dir=""
 ) -> dict:
-    if url in visited:
-        return {}
-    visited.add(url)
-    case_id = hashlib.md5(url.encode()).hexdigest()
-    html_path = os.path.join(html_dir, f"{case_id}.html")
-    screenshot_path = os.path.join(screenshot_dir, f"{case_id}.png")
+    case_id = generate_case_id(url)
+    html_path = os.path.join(output_dir, "html", f"{case_id}.html")
+    screenshot_path = os.path.join(output_dir, "screenshots", f"{case_id}.png")
     status_code = "ERROR"
 
     try:
@@ -207,7 +175,7 @@ async def crawl_single_page(
                 raise nav_err
 
         content = await page.content()
-        save_html(case_id, content)
+        save_html(html_path, content)
         await page.screenshot(
             **{**pw_config.screenshot_options, "path": screenshot_path}
         )
@@ -220,66 +188,88 @@ async def crawl_single_page(
         redirect_chain_str = " → ".join(reversed(redirect_chain))
 
         link_map = extract_unique_links(content, url)
-        write_csv_row(
-            {
-                "url": url,
-                "redirect_chain": redirect_chain_str,
-                "from_url": from_url,
-                "case_id": case_id,
-                "depth": depth,
-                "title": extract_title(content),
-                "status_code": status_code,
-                "content_length": len(content),
-                "link_count": len(link_map),
-                "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "error_message": "",
-                "anchor_html": from_anchor_html,
-            }
-        )
-        return link_map
+        return {
+            "url": url,
+            "redirect_chain": redirect_chain_str,
+            "from_url": from_url,
+            "case_id": case_id,
+            "depth": depth,
+            "title": extract_title(content),
+            "status_code": status_code,
+            "content_length": len(content),
+            "link_count": len(link_map),
+            "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "error_message": "",
+            "anchor_html": from_anchor_html,
+        }, link_map
 
     except Exception as e:
-        write_csv_row(
-            {
-                "url": url,
-                "redirect_chain": "",
-                "from_url": from_url,
-                "case_id": case_id,
-                "depth": depth,
-                "title": "",
-                "status_code": status_code,
-                "content_length": 0,
-                "link_count": 0,
-                "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "error_message": str(e),
-                "anchor_html": from_anchor_html,
-            }
-        )
-        return {}
+        return {
+            "url": url,
+            "redirect_chain": "",
+            "from_url": from_url,
+            "case_id": case_id,
+            "depth": depth,
+            "title": "",
+            "status_code": status_code,
+            "content_length": 0,
+            "link_count": 0,
+            "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "error_message": str(e),
+            "anchor_html": from_anchor_html,
+        }, {}
 
 
-async def crawl_bfs(page, start_urls: list[tuple[str, str, str]], start_depth=0):
+async def crawl_bfs(
+    page, start_urls: list[tuple[str, str, str]], output_dir: str, start_depth=0
+):
     queue = defaultdict(deque)
     for url, from_url, a_html in start_urls:
         if url not in visited and url not in queued:
             queue[start_depth].append((url, from_url, a_html))
             queued.add(url)
+
+    all_rows = (
+        read_csv(os.path.join(output_dir, "result.csv"))
+        if os.path.exists(os.path.join(output_dir, "result.csv"))
+        else []
+    )
     for depth in range(start_depth, config.MAX_DEPTH + 1):
         while queue[depth]:
             url, from_url, a_html = queue[depth].popleft()
             log_status(depth, url, queue)
-            link_map = await crawl_single_page(page, url, depth, from_url, a_html)
+            row, link_map = await crawl_single_page(
+                page, url, depth, from_url, a_html, output_dir
+            )
+            all_rows = [r for r in all_rows if r.get("url") != url]
+            all_rows.append(row)
             for next_url, next_anchor in link_map.items():
                 if next_url not in visited and next_url not in queued:
                     queue[depth + 1].append((next_url, url, next_anchor))
                     queued.add(next_url)
+    write_csv(os.path.join(output_dir, "result.csv"), all_rows)
 
 
-# === Main Entrypoint ===
-async def main(start_urls, start_depth, visited_input, queued_input):
-    global visited, queued
-    visited = visited_input
-    queued = queued_input
+async def retry_errors(page, output_dir: str):
+    rows = read_csv(os.path.join(output_dir, "result.csv"))
+    error_rows = [r for r in rows if r.get("status_code") == "ERROR"]
+    print(f"Retrying {len(error_rows)} error rows...")
+    for row in error_rows:
+        url = row["url"]
+        new_row, _ = await crawl_single_page(
+            page,
+            url,
+            int(row["depth"]),
+            row["from_url"],
+            row["anchor_html"],
+            output_dir,
+        )
+        rows = [r for r in rows if r.get("url") != url]
+        rows.append(new_row)
+    write_csv(os.path.join(output_dir, "result.csv"), rows)
+
+
+async def main():
     os.makedirs(pw_config.user_data_dir, exist_ok=True)
     async with async_playwright() as p:
         context = await (
@@ -303,17 +293,42 @@ async def main(start_urls, start_depth, visited_input, queued_input):
                 await page.goto(config.LOGIN_URL2)
                 await page.wait_for_selector(config.LOGIN_WAIT_SELECTOR)
 
-        await crawl_bfs(page, start_urls, start_depth)
+        if args.retry:
+            await retry_errors(page, args.retry)
+        else:
+            output_dir = args.resume or os.path.join(
+                "results", datetime.now().strftime("%Y%m%d_%H%M%S")
+            )
+            os.makedirs(os.path.join(output_dir, "html"), exist_ok=True)
+            os.makedirs(os.path.join(output_dir, "screenshots"), exist_ok=True)
+            csv_path = os.path.join(output_dir, "result.csv")
+
+            if args.resume:
+                visited_set, _, max_depth = restore_state_from_csv(csv_path)
+                start_depth = max_depth + 1
+                start_urls = []
+                with open(csv_path, "r", encoding="utf-8") as f:
+                    for row in csv.DictReader(f):
+                        if int(row.get("depth", -1)) == max_depth:
+                            html_path = os.path.join(
+                                output_dir, "html", f"{row['case_id']}.html"
+                            )
+                            html = load_html(html_path)
+                            if html:
+                                for next_url, a_html in extract_unique_links(
+                                    html, row["url"]
+                                ).items():
+                                    start_urls.append((next_url, row["url"], a_html))
+                global visited, queued
+                visited = visited_set
+                queued = set()
+            else:
+                start_depth = 0
+                start_urls = [(url, "", "") for url in config.START_URLS]
+
+            await crawl_bfs(page, start_urls, output_dir, start_depth)
         await context.close()
 
 
 if __name__ == "__main__":
-    if args.resume:
-        visited, queued, max_depth = restore_state_from_csv(csv_path)
-        start_depth = max_depth + 1
-        start_urls = get_urls_to_resume(start_depth)
-    else:
-        visited, queued, start_depth = set(), set(), 0
-        start_urls = [(url, "", "") for url in config.START_URLS]
-
-    asyncio.run(main(start_urls, start_depth, visited, queued))
+    asyncio.run(main())
