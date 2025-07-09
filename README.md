@@ -21,7 +21,9 @@ python main.py --resume results/20250708_093000
 python main.py --retry results/20250709_115006
 
 # ドメイン置換クローリング（既存のCSVに対してドメインを変更してクロールを実行）
-python main.py --domain-replace results/20250709_145122/result.csv
+# スクリーンショットとHTMLは元のURLと同じcase_idで、それぞれscreenshots_r1/html_r1ディレクトリに保存
+# リダイレクトが元のドメインに戻った場合は自動的に再置換（矢印：→通常、⇒再置換）
+python main.py --domain-replace results/20250709_194515/result.csv
 ```
 
 ## other
