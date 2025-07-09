@@ -29,6 +29,38 @@ R1_CSV_FIELDS = [
 ]
 
 
+def is_domain_match(domain1: str, domain2: str) -> bool:
+    """
+    2つのドメインが一致するか、または適切なサブドメイン関係にあるかを判定する
+
+    Args:
+        domain1: 比較するドメイン1
+        domain2: 比較するドメイン2
+
+    Returns:
+        マッチするかどうかのブール値
+    """
+    # 完全一致
+    if domain1 == domain2:
+        return True
+    
+    # サブドメインの関係をチェック
+    domain1_parts = domain1.split(".")
+    domain2_parts = domain2.split(".")
+    
+    # domain1がdomain2のサブドメインかチェック (sub.example.com -> example.com)
+    if len(domain1_parts) > len(domain2_parts):
+        if domain1.endswith("." + domain2):
+            return True
+    
+    # domain2がdomain1のサブドメインかチェック (example.com -> sub.example.com)
+    if len(domain2_parts) > len(domain1_parts):
+        if domain2.endswith("." + domain1):
+            return True
+    
+    return False
+
+
 def replace_domain(url: str) -> str:
     """
     設定に基づいてURLのドメインを置換する
@@ -40,14 +72,22 @@ def replace_domain(url: str) -> str:
         ドメインが置換されたURL。置換ルールがなければ元のURLを返す
     """
     parsed = urlparse(url)
-    domain = parsed.netloc
+    netloc = parsed.netloc
 
     if not hasattr(config, "DOMAIN_REPLACEMENT_RULES"):
         return url
 
     for original_domain, replacement_domain in config.DOMAIN_REPLACEMENT_RULES.items():
-        if original_domain in domain:
-            new_domain = domain.replace(original_domain, replacement_domain)
+        # 完全一致の場合
+        if netloc == original_domain:
+            new_parsed = parsed._replace(netloc=replacement_domain)
+            return urlunparse(new_parsed)
+            
+        # サブドメインの場合 (example.com -> sub1.example.com)
+        if netloc.endswith("." + original_domain):
+            # サブドメイン部分を取得
+            subdomain = netloc[:-(len(original_domain) + 1)]  # +1 for the dot
+            new_domain = f"{subdomain}.{replacement_domain}"
             new_parsed = parsed._replace(netloc=new_domain)
             return urlunparse(new_parsed)
 
@@ -72,17 +112,25 @@ def check_redirect_chain_domain(redirect_chain: List[str], original_url: str) ->
     final_url = redirect_chain[-1]
     
     # 元のURLから置換前のドメインを取得
+    original_netloc = urlparse(original_url).netloc
     original_domain = None
+    
+    # 元のURLに一致する置換ルールを探す
     for domain, _ in config.DOMAIN_REPLACEMENT_RULES.items():
-        if domain in urlparse(original_url).netloc:
+        if is_domain_match(domain, original_netloc):
             original_domain = domain
             break
     
     if not original_domain:
         return None, False
     
-    # 最終URLのドメインが元のドメインを含むかチェック
-    if original_domain in urlparse(final_url).netloc:
+    # 最終URLのドメインをチェック
+    final_netloc = urlparse(final_url).netloc
+    
+    # 最終的なURLが元のドメインかをチェック
+    is_original_domain = is_domain_match(final_netloc, original_domain)
+    
+    if is_original_domain:
         # 元のドメインに戻っていた場合、再度置換
         new_url = replace_domain(final_url)
         if new_url != final_url:
