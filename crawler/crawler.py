@@ -88,7 +88,6 @@ async def crawl_single_page(
             if "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_msg or "HTTP error" in err_msg:
                 status_code = 500
             else:
-                print(f"Navigation error for {url}: {err_msg}")
                 raise nav_err
 
         # 特定のテキストが消えるのを待機
@@ -114,8 +113,8 @@ async def crawl_single_page(
             await page.screenshot(
                 **{**pw_config.screenshot_options, "path": screenshot_path}
             )
-        except Exception as ss_err:
-            print(f"Screenshot error for {url}: {str(ss_err)}")
+        except Exception:
+            pass
 
         # リダイレクトチェーンの処理
         redirect_chain = []
