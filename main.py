@@ -38,7 +38,12 @@ from crawler.crawler import crawl_bfs, retry_errors, crawl_single_page
 parser = argparse.ArgumentParser()
 parser.add_argument("--resume", type=str, metavar="DIR", help="Resume crawl")
 parser.add_argument("--retry", type=str, metavar="DIR", help="Retry ERROR rows")
-parser.add_argument("--domain-replace", type=str, metavar="CSV", help="Run domain replacement crawl on existing CSV")
+parser.add_argument(
+    "--domain-replace",
+    type=str,
+    metavar="CSV",
+    help="Run domain replacement crawl on existing CSV",
+)
 args = parser.parse_args()
 
 
@@ -243,12 +248,12 @@ async def main():
             if not os.path.exists(args.domain_replace):
                 print(f"Error: CSVファイルが見つかりません: {args.domain_replace}")
                 sys.exit(1)
-            
+
             # 出力ディレクトリはCSVファイルと同じディレクトリ
             output_dir = os.path.dirname(args.domain_replace)
             print(f"Domain replacement crawling on: {args.domain_replace}")
             await crawl_with_domain_replacement(page, args.domain_replace, output_dir)
-        
+
         # エラー行の再試行モード
         elif args.retry:
             await retry_errors(page, args.retry)
@@ -293,7 +298,11 @@ async def main():
             await crawl_bfs(page, start_urls, output_dir, start_depth)
 
             # 自動ドメイン置換クロール (設定でオプトイン)
-            if hasattr(config, "DOMAIN_REPLACEMENT") and isinstance(config.DOMAIN_REPLACEMENT, dict) and config.DOMAIN_REPLACEMENT.get("ENABLE", False):
+            if (
+                hasattr(config, "DOMAIN_REPLACEMENT")
+                and isinstance(config.DOMAIN_REPLACEMENT, dict)
+                and config.DOMAIN_REPLACEMENT.get("ENABLE", False)
+            ):
                 csv_path = config.DOMAIN_REPLACEMENT.get("CSV_PATH") or csv_path
                 if os.path.exists(csv_path):
                     print(f"Auto domain replacement crawling on: {csv_path}")
