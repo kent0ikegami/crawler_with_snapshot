@@ -67,34 +67,83 @@ async def crawl_single_page(
     status_code = "ERROR"
 
     try:
+        response = None
         try:
+            # waitUntil: 'networkidle'を追加してリダイレクトを含むページの読み込み完了を待機
             response = await page.goto(
-                url, timeout=pw_config.timeouts["navigation_timeout"]
+                url,
+                timeout=pw_config.timeouts["navigation_timeout"],
+                wait_until="networkidle",  # リダイレクト完了＆ネットワーク通信完了まで待機
             )
-            if not response or response.status >= 400:
-                raise Exception(
-                    f"HTTP error or no response: status={response.status if response else 'N/A'}"
-                )
+
+            # ページの準備ができているか確認
+            if not response:
+                raise Exception("No response received")
+
+            if response.status >= 400:
+                raise Exception(f"HTTP error: status={response.status}")
+
             status_code = response.status
+
+            # DOMContentLoadedイベントを待つ
+            await page.wait_for_load_state("domcontentloaded")
+
         except Exception as nav_err:
             err_msg = str(nav_err)
             if "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_msg or "HTTP error" in err_msg:
                 status_code = 500
+                # エラーページでもできるだけコンテンツを取得
+                await page.wait_for_load_state("domcontentloaded", timeout=5000).catch(
+                    lambda _: None
+                )
             else:
+                print(f"Navigation error for {url}: {err_msg}")
                 raise nav_err
 
+        # WAIT_FOR_TEXT_TO_DISAPPEARの処理（configに設定がある場合）
+        if (
+            hasattr(config, "WAIT_FOR_TEXT_TO_DISAPPEAR")
+            and config.WAIT_FOR_TEXT_TO_DISAPPEAR
+        ):
+            try:
+                wait_text = config.WAIT_FOR_TEXT_TO_DISAPPEAR
+                await page.wait_for_function(
+                    f"""() => !document.body.innerText.includes('{wait_text}')""",
+                    timeout=10000,
+                ).catch(lambda _: None)
+            except Exception as wait_err:
+                print(f"Wait error for {url}: {str(wait_err)}")
+                # エラーをスローせずに続行
+
+        # ページコンテンツの取得
         content = await page.content()
         save_html(html_path, content)
-        await page.screenshot(
-            **{**pw_config.screenshot_options, "path": screenshot_path}
-        )
 
+        # スクリーンショットを取得（リダイレクト完了後）
+        try:
+            await page.screenshot(
+                **{**pw_config.screenshot_options, "path": screenshot_path}
+            )
+        except Exception as ss_err:
+            print(f"Screenshot error for {url}: {str(ss_err)}")
+            # スクリーンショットが失敗しても処理を続行
+
+        # リダイレクトチェーンの処理
         redirect_chain = []
-        req = response.request if response else None
-        while req:
-            redirect_chain.append(req.url)
-            req = req.redirected_from
-        redirect_chain_str = " → ".join(reversed(redirect_chain))
+        try:
+            # responseがNoneの場合でも安全に処理
+            req = response.request if response else None
+            while req:
+                redirect_chain.append(req.url)
+                req = req.redirected_from
+        except Exception as redirect_err:
+            print(f"Redirect chain error for {url}: {str(redirect_err)}")
+            # リダイレクト情報の取得に失敗しても処理を続行
+
+        # リダイレクトチェーンが空でない場合のみ結合
+        redirect_chain_str = (
+            " → ".join(reversed(redirect_chain)) if redirect_chain else ""
+        )
 
         link_map = extract_unique_links(content, url)
         return {
