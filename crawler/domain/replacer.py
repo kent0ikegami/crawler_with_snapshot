@@ -31,39 +31,23 @@ R1_CSV_FIELDS = [
 
 def is_domain_match(domain1: str, domain2: str) -> bool:
     """
-    2つのドメインが一致するか、または適切なサブドメイン関係にあるかを判定する
+    2つのドメインが完全に一致するかを判定する
 
     Args:
         domain1: 比較するドメイン1
         domain2: 比較するドメイン2
 
     Returns:
-        マッチするかどうかのブール値
+        完全に一致するかどうかのブール値
     """
-    # 完全一致
-    if domain1 == domain2:
-        return True
-    
-    # サブドメインの関係をチェック
-    domain1_parts = domain1.split(".")
-    domain2_parts = domain2.split(".")
-    
-    # domain1がdomain2のサブドメインかチェック (sub.example.com -> example.com)
-    if len(domain1_parts) > len(domain2_parts):
-        if domain1.endswith("." + domain2):
-            return True
-    
-    # domain2がdomain1のサブドメインかチェック (example.com -> sub.example.com)
-    if len(domain2_parts) > len(domain1_parts):
-        if domain2.endswith("." + domain1):
-            return True
-    
-    return False
+    # 完全一致のみを判定
+    return domain1 == domain2
 
 
 def replace_domain(url: str) -> str:
     """
     設定に基づいてURLのドメインを置換する
+    完全一致の場合のみ置換を行う
 
     Args:
         url: 元のURL
@@ -78,23 +62,17 @@ def replace_domain(url: str) -> str:
         return url
 
     for original_domain, replacement_domain in config.DOMAIN_REPLACEMENT_RULES.items():
-        # 完全一致の場合
+        # 完全一致の場合のみ置換
         if netloc == original_domain:
             new_parsed = parsed._replace(netloc=replacement_domain)
-            return urlunparse(new_parsed)
-            
-        # サブドメインの場合 (example.com -> sub1.example.com)
-        if netloc.endswith("." + original_domain):
-            # サブドメイン部分を取得
-            subdomain = netloc[:-(len(original_domain) + 1)]  # +1 for the dot
-            new_domain = f"{subdomain}.{replacement_domain}"
-            new_parsed = parsed._replace(netloc=new_domain)
             return urlunparse(new_parsed)
 
     return url
 
 
-def check_redirect_chain_domain(redirect_chain: List[str], original_url: str) -> Tuple[str, bool]:
+def check_redirect_chain_domain(
+    redirect_chain: List[str], original_url: str
+) -> Tuple[str, bool]:
     """
     リダイレクトチェーンを検査し、元のドメインに戻っている場合は再度置換する
 
@@ -107,35 +85,35 @@ def check_redirect_chain_domain(redirect_chain: List[str], original_url: str) ->
     """
     if not redirect_chain:
         return None, False
-    
+
     # 最後のURLを取得
     final_url = redirect_chain[-1]
-    
+
     # 元のURLから置換前のドメインを取得
     original_netloc = urlparse(original_url).netloc
     original_domain = None
-    
+
     # 元のURLに一致する置換ルールを探す
     for domain, _ in config.DOMAIN_REPLACEMENT_RULES.items():
         if is_domain_match(domain, original_netloc):
             original_domain = domain
             break
-    
+
     if not original_domain:
         return None, False
-    
+
     # 最終URLのドメインをチェック
     final_netloc = urlparse(final_url).netloc
-    
+
     # 最終的なURLが元のドメインかをチェック
     is_original_domain = is_domain_match(final_netloc, original_domain)
-    
+
     if is_original_domain:
         # 元のドメインに戻っていた場合、再度置換
         new_url = replace_domain(final_url)
         if new_url != final_url:
             return new_url, True
-    
+
     return None, False
 
 
@@ -235,7 +213,7 @@ async def crawl_with_domain_replacement(
         if new_url == url:
             print(f"No domain replacement rule matched for {url}, skipping...")
             continue
-            
+
         print(f"  → Domain replaced: {url} → {new_url}")
 
         try:
@@ -327,48 +305,63 @@ async def crawl_with_domain_replacement(
                         req = req.redirected_from
                 except Exception:
                     pass
-                
+
                 # リダイレクトチェーンを逆順に（実際の流れ順に）
                 if redirect_chain:
                     redirect_chain = list(reversed(redirect_chain))
-                
+
                 # 元のドメインに戻っていないかチェック
-                additional_url, special_redirect = check_redirect_chain_domain(redirect_chain, url)
-                
+                additional_url, special_redirect = check_redirect_chain_domain(
+                    redirect_chain, url
+                )
+
                 # リダイレクトチェーン文字列の作成（特殊処理がある場合は別の矢印を使用）
                 if redirect_chain:
-                    redirect_chain_str = " ".join([f"{NORMAL_ARROW} {url}" for url in redirect_chain])
-                    
+                    redirect_chain_str = " ".join(
+                        [f"{NORMAL_ARROW} {url}" for url in redirect_chain]
+                    )
+
                     # 特殊処理が必要な場合
                     if special_redirect and additional_url:
                         redirect_chain_str += f" {REPLACEMENT_ARROW} {additional_url}"
-                        
+
                         # 追加のURLにアクセス
                         try:
-                            print(f"  → Detected redirect to original domain. Accessing replaced URL: {additional_url}")
+                            print(
+                                f"  → Detected redirect to original domain. Accessing replaced URL: {additional_url}"
+                            )
                             additional_response = await page.goto(
                                 additional_url,
                                 timeout=pw_config.timeouts["navigation_timeout"],
                                 wait_until="domcontentloaded",
                             )
-                            
+
                             if additional_response and additional_response.status < 400:
                                 # 追加アクセスが成功した場合、新しいコンテンツを使用
                                 content = await page.content()
                                 save_html(html_path, content)
-                                print(f"  → Updated R1 HTML with additional redirect content")
-                                
+                                print(
+                                    f"  → Updated R1 HTML with additional redirect content"
+                                )
+
                                 # 追加のスクリーンショット
                                 await page.wait_for_timeout(500)
                                 await page.screenshot(
-                                    **{**pw_config.screenshot_options, "path": screenshot_path}
+                                    **{
+                                        **pw_config.screenshot_options,
+                                        "path": screenshot_path,
+                                    }
                                 )
-                                print(f"  → Updated R1 screenshot with additional redirect content")
-                                
+                                print(
+                                    f"  → Updated R1 screenshot with additional redirect content"
+                                )
+
                                 # 追加アクセスのステータスに更新
                                 status_code = additional_response.status
                         except Exception as add_err:
-                            print(f"  → Failed to access additional redirect URL: {str(add_err)}")
+                            print(
+                                f"  → Failed to access additional redirect URL: {str(add_err)}"
+                            )
                 else:
                     redirect_chain_str = ""
 
@@ -376,7 +369,7 @@ async def crawl_with_domain_replacement(
                 link_map = extract_unique_links(content, new_url)
                 link_count = len(link_map)
                 content_length = len(content)
-                
+
             except Exception as e:
                 error_message = str(e)
 
@@ -414,7 +407,7 @@ async def crawl_with_domain_replacement(
 
         except Exception as e:
             error_message = str(e)
-            
+
             r1_data = {
                 "url_r1": new_url,
                 "redirect_chain_r1": "",
