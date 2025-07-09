@@ -16,7 +16,12 @@ python main.py
 
 # 再開
 python main.py --resume results/20250708_093000
+
+# エラー行の再試行
 python main.py --retry results/20250709_115006
+
+# ドメイン置換クローリング
+python main.py --domain-replace results/20250709_123955/result.csv
 ```
 
 ## other
