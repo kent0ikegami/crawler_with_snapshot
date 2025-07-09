@@ -189,10 +189,22 @@ async def crawl_single_page(
     case_id = hashlib.md5(url.encode("utf-8")).hexdigest()
     html_filename = os.path.join(html_dir, f"{case_id}.html")
     screenshot_filename = os.path.join(screenshot_dir, f"{case_id}.png")
+    response = None
+    status_code = "ERROR"
+
     try:
-        response = await page.goto(
-            url, timeout=pw_config.timeouts["navigation_timeout"]
-        )
+        try:
+            response = await page.goto(
+                url,
+                timeout=pw_config.timeouts["navigation_timeout"],
+            )
+            status_code = response.status
+        except Exception as nav_err:
+            err_msg = str(nav_err)
+            if "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_msg:
+                status_code = 500
+            else:
+                raise nav_err
         if (
             hasattr(config, "WAIT_FOR_TEXT_TO_DISAPPEAR")
             and config.WAIT_FOR_TEXT_TO_DISAPPEAR
@@ -223,7 +235,7 @@ async def crawl_single_page(
             "case_id": case_id,
             "depth": depth,
             "title": extract_title(content),
-            "status_code": response.status,
+            "status_code": status_code,
             "content_length": len(content),
             "link_count": len(link_map),
             "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -240,7 +252,7 @@ async def crawl_single_page(
             "case_id": case_id,
             "depth": depth,
             "title": "",
-            "status_code": "ERROR",
+            "status_code": status_code,
             "content_length": 0,
             "link_count": 0,
             "crawled_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
