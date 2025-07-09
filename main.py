@@ -292,7 +292,7 @@ async def main(start_urls, start_depth, visited_input, queued_input):
             and hasattr(config, "LOGIN_WAIT_SELECTOR")
         ):
             await page.goto(config.LOGIN_URL)
-            await page.wait_for_selector(config.LOGIN_WAIT_SELECTOR)
+            await page.wait_for_selector(config.LOGIN_WAIT_SELECTOR, timeout=600000)
         if (
             config.USE_USER_DATA
             and config.USE_USER_DATA_AND_LOGIN
