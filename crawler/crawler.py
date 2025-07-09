@@ -85,17 +85,27 @@ async def crawl_single_page(
 
             status_code = response.status
 
-            # DOMContentLoadedイベントを待つ
+            # まずDOMContentLoadedイベントを待つ
             await page.wait_for_load_state("domcontentloaded")
+
+            # 次に、可能であればnetworkidleを待つ（より安定したページ状態）
+            try:
+                await page.wait_for_load_state(
+                    "networkidle", timeout=pw_config.timeouts["network_idle_timeout"]
+                )
+            except Exception as idle_err:
+                print(f"Network idle timeout for {url}: {str(idle_err)}")
+                # networkidle待機のエラーは無視して続行
 
         except Exception as nav_err:
             err_msg = str(nav_err)
             if "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_msg or "HTTP error" in err_msg:
                 status_code = 500
                 # エラーページでもできるだけコンテンツを取得
-                await page.wait_for_load_state("domcontentloaded", timeout=5000).catch(
-                    lambda _: None
-                )
+                try:
+                    await page.wait_for_load_state("domcontentloaded", timeout=5000)
+                except Exception:
+                    pass  # エラーは無視して続行
             else:
                 print(f"Navigation error for {url}: {err_msg}")
                 raise nav_err
@@ -110,7 +120,7 @@ async def crawl_single_page(
                 await page.wait_for_function(
                     f"""() => !document.body.innerText.includes('{wait_text}')""",
                     timeout=10000,
-                ).catch(lambda _: None)
+                )
             except Exception as wait_err:
                 print(f"Wait error for {url}: {str(wait_err)}")
                 # エラーをスローせずに続行
@@ -121,6 +131,10 @@ async def crawl_single_page(
 
         # スクリーンショットを取得（リダイレクト完了後）
         try:
+            # スクリーンショット取得前に短い待機を追加（ページレンダリング完了を確保）
+            await page.wait_for_timeout(500)
+
+            # スクリーンショットの取得
             await page.screenshot(
                 **{**pw_config.screenshot_options, "path": screenshot_path}
             )

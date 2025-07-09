@@ -37,7 +37,7 @@ screenshot_options = {
     "type": "png",
     "timeout": 30000,  # スクリーンショット取得のタイムアウト - 30秒
     "omit_background": False,  # 背景を含める
-    "quality": 100,  # PNG品質（0-100）
+    # Note: quality オプションはJPEG形式でのみ使用可能
 }
 
 # トレース設定
