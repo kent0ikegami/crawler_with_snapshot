@@ -147,30 +147,21 @@ def update_csv_row(csv_path: str, url: str, r1_data: dict) -> None:
         writer.writerows(rows)
 
 
-async def crawl_with_domain_replacement(
-    page,
-    csv_path: str,
-    output_dir: str,
-) -> None:
+def ensure_r1_csv_fields(csv_path: str) -> List[Dict]:
     """
-    既存のCSVファイルに記載されたURLに対して、ドメインを変更して追加クロールを行う
+    CSVファイルにR1用のフィールドが存在することを確認し、必要に応じて追加する
 
     Args:
-        page: Playwrightのページオブジェクト
         csv_path: 入力CSVファイルのパス
-        output_dir: 出力ディレクトリ
-    """
-    # R1用のディレクトリを作成
-    r1_html_dir = os.path.join(output_dir, "html_r1")
-    r1_screenshots_dir = os.path.join(output_dir, "screenshots_r1")
-    os.makedirs(r1_html_dir, exist_ok=True)
-    os.makedirs(r1_screenshots_dir, exist_ok=True)
 
+    Returns:
+        更新後のCSVの行リスト
+    """
     # CSVファイルを読み込む
     rows = read_csv(csv_path)
     if not rows:
         print(f"No rows found in {csv_path}")
-        return
+        return []
 
     # 追加フィールドの存在を確認し、必要に応じてヘッダーを追加
     if not all(field in rows[0] for field in R1_CSV_FIELDS):
@@ -194,14 +185,251 @@ async def crawl_with_domain_replacement(
         # 更新されたCSVを再読み込み
         rows = read_csv(csv_path)
 
-    # 全行を処理
-    rows_to_process = rows
-    total_rows = len(rows_to_process)
+    return rows
 
+
+async def handle_redirects(
+    page, redirect_chain: List[str], url: str, html_path: str, screenshot_path: str
+) -> Tuple[str, str, int]:
+    """
+    リダイレクトを処理し、必要に応じて追加のURLにアクセスする
+
+    Args:
+        page: Playwrightのページオブジェクト
+        redirect_chain: リダイレクトチェーン
+        url: 元のURL
+        html_path: 保存先HTMLパス
+        screenshot_path: 保存先スクリーンショットパス
+
+    Returns:
+        (リダイレクト文字列, コンテンツ, ステータスコード)のタプル
+    """
+    redirect_chain_str = ""
+    content = await page.content()
+    status_code = 200  # デフォルト値
+
+    # リダイレクトチェーンを逆順に（実際の流れ順に）
+    if redirect_chain:
+        redirect_chain = list(reversed(redirect_chain))
+
+        # 元のドメインに戻っていないかチェック
+        additional_url, special_redirect = check_redirect_chain_domain(
+            redirect_chain, url
+        )
+
+        # リダイレクトチェーン文字列の作成（特殊処理がある場合は別の矢印を使用）
+        redirect_chain_str = " ".join(
+            [f"{NORMAL_ARROW} {url}" for url in redirect_chain]
+        )
+
+        # 特殊処理が必要な場合
+        if special_redirect and additional_url:
+            redirect_chain_str += f" {REPLACEMENT_ARROW} {additional_url}"
+
+            # 追加のURLにアクセス
+            try:
+                print(
+                    f"  → Detected redirect to original domain. Accessing replaced URL: {additional_url}"
+                )
+                additional_response = await page.goto(
+                    additional_url,
+                    timeout=pw_config.timeouts["navigation_timeout"],
+                    wait_until="domcontentloaded",
+                )
+
+                if additional_response and additional_response.status < 400:
+                    # 追加アクセスが成功した場合、新しいコンテンツを使用
+                    content = await page.content()
+                    save_html(html_path, content)
+                    print(f"  → Updated R1 HTML with additional redirect content")
+
+                    # 追加のスクリーンショット
+                    await page.wait_for_timeout(500)
+                    await page.screenshot(
+                        **{
+                            **pw_config.screenshot_options,
+                            "path": screenshot_path,
+                        }
+                    )
+                    print(f"  → Updated R1 screenshot with additional redirect content")
+
+                    # 追加アクセスのステータスに更新
+                    status_code = additional_response.status
+            except Exception as add_err:
+                print(f"  → Failed to access additional redirect URL: {str(add_err)}")
+
+    return redirect_chain_str, content, status_code
+
+
+async def crawl_single_url(
+    page, url: str, new_url: str, depth: int, r1_html_dir: str, r1_screenshots_dir: str
+) -> Dict:
+    """
+    単一のURLをクロールする
+
+    Args:
+        page: Playwrightのページオブジェクト
+        url: 元のURL
+        new_url: ドメイン置換後のURL
+        depth: クロール深度
+        r1_html_dir: R1用HTML保存ディレクトリ
+        r1_screenshots_dir: R1用スクリーンショット保存ディレクトリ
+
+    Returns:
+        R1データの辞書
+    """
+    # 元のURLと同じcase_idを使用する（比較できるようにするため）
+    original_case_id = generate_case_id(url)
+
+    html_path = os.path.join(r1_html_dir, f"{original_case_id}.html")
+    screenshot_path = os.path.join(r1_screenshots_dir, f"{original_case_id}.png")
+
+    # ページクロールとHTMLの保存
+    status_code = "ERROR"
+    redirect_chain_str = ""
+    title = ""
+    content_length = 0
+    link_count = 0
+    error_message = ""
+    content = ""
+
+    try:
+        response = None
+        try:
+            response = await page.goto(
+                new_url,
+                timeout=pw_config.timeouts["navigation_timeout"],
+                wait_until="domcontentloaded",
+            )
+
+            if not response:
+                raise Exception("No response received")
+
+            if response.status >= 400:
+                raise Exception(f"HTTP error: status={response.status}")
+
+            status_code = response.status
+
+        except Exception as nav_err:
+            err_msg = str(nav_err)
+            if "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_msg or "HTTP error" in err_msg:
+                status_code = 500
+            else:
+                raise nav_err
+
+        # 特定のテキストが消えるのを待機
+        if (
+            hasattr(config, "WAIT_FOR_TEXT_TO_DISAPPEAR")
+            and config.WAIT_FOR_TEXT_TO_DISAPPEAR
+        ):
+            try:
+                await page.wait_for_function(
+                    f"""() => !document.body.innerText.includes('{config.WAIT_FOR_TEXT_TO_DISAPPEAR}')""",
+                    timeout=10000,
+                )
+            except Exception:
+                pass
+
+        # ページコンテンツの取得
+        content = await page.content()
+        save_html(html_path, content)
+        print(f"  → R1 HTML saved to: {html_path}")
+
+        # スクリーンショット取得
+        try:
+            await page.wait_for_timeout(500)
+            await page.screenshot(
+                **{**pw_config.screenshot_options, "path": screenshot_path}
+            )
+            print(f"  → R1 screenshot saved to: {screenshot_path}")
+        except Exception as ss_err:
+            print(f"  → Failed to save R1 screenshot: {str(ss_err)}")
+
+        # リダイレクトチェーンの処理
+        redirect_chain = []
+        try:
+            req = response.request if response else None
+            while req:
+                redirect_chain.append(req.url)
+                req = req.redirected_from
+        except Exception:
+            pass
+
+        # リダイレクト処理
+        redirect_chain_str, content, status_code = await handle_redirects(
+            page, redirect_chain, url, html_path, screenshot_path
+        )
+
+        # コンテンツ分析
+        title = extract_title(content)
+        link_map = extract_unique_links(content, new_url)
+        link_count = len(link_map)
+        content_length = len(content)
+
+    except Exception as e:
+        error_message = str(e)
+
+    # 結果行の作成
+    r1_row = {
+        "url": new_url,
+        "redirect_chain": redirect_chain_str,
+        "from_url": url,
+        "case_id": original_case_id,  # 元のURLと同じcase_idを使用
+        "depth": depth,
+        "title": title,
+        "status_code": status_code,
+        "content_length": content_length,
+        "link_count": link_count,
+        "crawled_at": get_datetime(),
+        "error_message": error_message,
+        "anchor_html": "",
+    }
+
+    # R1用の結果行を作成
+    r1_data = {
+        "url_r1": new_url,
+        "redirect_chain_r1": r1_row.get("redirect_chain", ""),
+        "title_r1": r1_row.get("title", ""),
+        "status_code_r1": r1_row.get("status_code", "ERROR"),
+        "content_length_r1": str(r1_row.get("content_length", 0)),
+        "link_count_r1": str(r1_row.get("link_count", 0)),
+        "crawled_at_r1": r1_row.get("crawled_at", get_datetime()),
+        "error_message_r1": r1_row.get("error_message", ""),
+    }
+
+    return r1_data
+
+
+async def crawl_with_domain_replacement(
+    page,
+    csv_path: str,
+    output_dir: str,
+) -> None:
+    """
+    既存のCSVファイルに記載されたURLに対して、ドメインを変更して追加クロールを行う
+
+    Args:
+        page: Playwrightのページオブジェクト
+        csv_path: 入力CSVファイルのパス
+        output_dir: 出力ディレクトリ
+    """
+    # R1用のディレクトリを作成
+    r1_html_dir = os.path.join(output_dir, "html_r1")
+    r1_screenshots_dir = os.path.join(output_dir, "screenshots_r1")
+    os.makedirs(r1_html_dir, exist_ok=True)
+    os.makedirs(r1_screenshots_dir, exist_ok=True)
+
+    # CSVファイルを準備して読み込む
+    rows = ensure_r1_csv_fields(csv_path)
+    if not rows:
+        return
+
+    # 全行を処理
+    total_rows = len(rows)
     print(f"Processing {total_rows} URLs for domain replacement...")
 
     # 各URLをクロール
-    for i, row in enumerate(rows_to_process):
+    for i, row in enumerate(rows):
         url = row.get("url")
         if not url:
             continue
@@ -219,187 +447,9 @@ async def crawl_with_domain_replacement(
         try:
             # クロール実行
             depth = int(row.get("depth", "0"))
-
-            # 元のURLと同じcase_idを使用する（比較できるようにするため）
-            original_case_id = row.get("case_id")
-            if not original_case_id:
-                # 万が一case_idがない場合は元のURLから生成する
-                original_case_id = generate_case_id(url)
-
-            html_path = os.path.join(r1_html_dir, f"{original_case_id}.html")
-            screenshot_path = os.path.join(
-                r1_screenshots_dir, f"{original_case_id}.png"
+            r1_data = await crawl_single_url(
+                page, url, new_url, depth, r1_html_dir, r1_screenshots_dir
             )
-
-            # ページクロールとHTMLの保存
-            status_code = "ERROR"
-            redirect_chain_str = ""
-            title = ""
-            content_length = 0
-            link_count = 0
-            error_message = ""
-            content = ""
-
-            try:
-                response = None
-                try:
-                    response = await page.goto(
-                        new_url,
-                        timeout=pw_config.timeouts["navigation_timeout"],
-                        wait_until="domcontentloaded",
-                    )
-
-                    if not response:
-                        raise Exception("No response received")
-
-                    if response.status >= 400:
-                        raise Exception(f"HTTP error: status={response.status}")
-
-                    status_code = response.status
-
-                except Exception as nav_err:
-                    err_msg = str(nav_err)
-                    if (
-                        "ERR_HTTP_RESPONSE_CODE_FAILURE" in err_msg
-                        or "HTTP error" in err_msg
-                    ):
-                        status_code = 500
-                    else:
-                        raise nav_err
-
-                # 特定のテキストが消えるのを待機
-                if (
-                    hasattr(config, "WAIT_FOR_TEXT_TO_DISAPPEAR")
-                    and config.WAIT_FOR_TEXT_TO_DISAPPEAR
-                ):
-                    try:
-                        await page.wait_for_function(
-                            f"""() => !document.body.innerText.includes('{config.WAIT_FOR_TEXT_TO_DISAPPEAR}')""",
-                            timeout=10000,
-                        )
-                    except Exception:
-                        pass
-
-                # ページコンテンツの取得
-                content = await page.content()
-                save_html(html_path, content)
-                print(f"  → R1 HTML saved to: {html_path}")
-
-                # スクリーンショット取得
-                try:
-                    await page.wait_for_timeout(500)
-                    await page.screenshot(
-                        **{**pw_config.screenshot_options, "path": screenshot_path}
-                    )
-                    print(f"  → R1 screenshot saved to: {screenshot_path}")
-                except Exception as ss_err:
-                    print(f"  → Failed to save R1 screenshot: {str(ss_err)}")
-                    pass
-
-                # リダイレクトチェーンの処理
-                redirect_chain = []
-                try:
-                    req = response.request if response else None
-                    while req:
-                        redirect_chain.append(req.url)
-                        req = req.redirected_from
-                except Exception:
-                    pass
-
-                # リダイレクトチェーンを逆順に（実際の流れ順に）
-                if redirect_chain:
-                    redirect_chain = list(reversed(redirect_chain))
-
-                # 元のドメインに戻っていないかチェック
-                additional_url, special_redirect = check_redirect_chain_domain(
-                    redirect_chain, url
-                )
-
-                # リダイレクトチェーン文字列の作成（特殊処理がある場合は別の矢印を使用）
-                if redirect_chain:
-                    redirect_chain_str = " ".join(
-                        [f"{NORMAL_ARROW} {url}" for url in redirect_chain]
-                    )
-
-                    # 特殊処理が必要な場合
-                    if special_redirect and additional_url:
-                        redirect_chain_str += f" {REPLACEMENT_ARROW} {additional_url}"
-
-                        # 追加のURLにアクセス
-                        try:
-                            print(
-                                f"  → Detected redirect to original domain. Accessing replaced URL: {additional_url}"
-                            )
-                            additional_response = await page.goto(
-                                additional_url,
-                                timeout=pw_config.timeouts["navigation_timeout"],
-                                wait_until="domcontentloaded",
-                            )
-
-                            if additional_response and additional_response.status < 400:
-                                # 追加アクセスが成功した場合、新しいコンテンツを使用
-                                content = await page.content()
-                                save_html(html_path, content)
-                                print(
-                                    f"  → Updated R1 HTML with additional redirect content"
-                                )
-
-                                # 追加のスクリーンショット
-                                await page.wait_for_timeout(500)
-                                await page.screenshot(
-                                    **{
-                                        **pw_config.screenshot_options,
-                                        "path": screenshot_path,
-                                    }
-                                )
-                                print(
-                                    f"  → Updated R1 screenshot with additional redirect content"
-                                )
-
-                                # 追加アクセスのステータスに更新
-                                status_code = additional_response.status
-                        except Exception as add_err:
-                            print(
-                                f"  → Failed to access additional redirect URL: {str(add_err)}"
-                            )
-                else:
-                    redirect_chain_str = ""
-
-                title = extract_title(content)
-                link_map = extract_unique_links(content, new_url)
-                link_count = len(link_map)
-                content_length = len(content)
-
-            except Exception as e:
-                error_message = str(e)
-
-            # 結果行の作成
-            r1_row = {
-                "url": new_url,
-                "redirect_chain": redirect_chain_str,
-                "from_url": url,
-                "case_id": original_case_id,  # 元のURLと同じcase_idを使用
-                "depth": depth,
-                "title": title,
-                "status_code": status_code,
-                "content_length": content_length,
-                "link_count": link_count,
-                "crawled_at": get_datetime(),
-                "error_message": error_message,
-                "anchor_html": "",
-            }
-
-            # R1用の結果行を作成
-            r1_data = {
-                "url_r1": new_url,
-                "redirect_chain_r1": r1_row.get("redirect_chain", ""),
-                "title_r1": r1_row.get("title", ""),
-                "status_code_r1": r1_row.get("status_code", "ERROR"),
-                "content_length_r1": str(r1_row.get("content_length", 0)),
-                "link_count_r1": str(r1_row.get("link_count", 0)),
-                "crawled_at_r1": r1_row.get("crawled_at", get_datetime()),
-                "error_message_r1": r1_row.get("error_message", ""),
-            }
 
             # CSVに行を追記
             update_csv_row(csv_path, url, r1_data)
