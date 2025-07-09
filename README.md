@@ -20,8 +20,8 @@ python main.py --resume results/20250708_093000
 # エラー行の再試行
 python main.py --retry results/20250709_115006
 
-# ドメイン置換クローリング
-python main.py --domain-replace results/20250709_123955/result.csv
+# ドメイン置換クローリング（既存のCSVに対してドメインを変更してクロールを実行）
+python main.py --domain-replace results/20250709_145122/result.csv
 ```
 
 ## other
