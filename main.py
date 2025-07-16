@@ -78,8 +78,16 @@ async def main():
                             )
                             html = load_html(html_path)
                             if html:
+                                # リダイレクトチェーンがある場合は最終URLを使用
+                                redirect_chain = row.get("redirect_chain", "")
+                                if redirect_chain:
+                                    # リダイレクトチェーンから最終URLを抽出
+                                    final_url = redirect_chain.split(" → ")[-1]
+                                else:
+                                    final_url = row["url"]
+                                
                                 for next_url, a_html in extract_unique_links(
-                                    html, row["url"]
+                                    html, final_url
                                 ).items():
                                     start_urls.append((next_url, row["url"], a_html))
 

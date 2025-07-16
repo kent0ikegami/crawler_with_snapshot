@@ -129,8 +129,11 @@ async def crawl_single_page(
         redirect_chain_str = (
             " → ".join(reversed(redirect_chain)) if redirect_chain else ""
         )
-
-        link_map = extract_unique_links(content, url)
+        
+        # リダイレクトチェーンが存在する場合、最終的な宛先URLをベースURLとして使用
+        final_url = redirect_chain[0] if redirect_chain else url
+        
+        link_map = extract_unique_links(content, final_url)
         return {
             "url": url,
             "redirect_chain": redirect_chain_str,
