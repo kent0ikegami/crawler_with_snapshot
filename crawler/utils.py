@@ -84,6 +84,22 @@ def write_csv(path: str, rows: List[Dict[str, str]], fieldnames: List[str]) -> N
         writer.writerows(rows)
 
 
+def append_csv_row(path: str, row: Dict[str, str], fieldnames: List[str]) -> None:
+    """1行だけCSVファイルに追記する
+
+    Args:
+        path: CSVファイルのパス
+        row: 書き込む1行のデータ（辞書形式）
+        fieldnames: CSVのフィールド名リスト
+    """
+    file_exists = os.path.exists(path)
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if not file_exists:
+            writer.writeheader()
+        writer.writerow(row)
+
+
 def create_output_directories(base_dir: str) -> None:
     """出力ディレクトリを作成"""
     os.makedirs(os.path.join(base_dir, "html"), exist_ok=True)

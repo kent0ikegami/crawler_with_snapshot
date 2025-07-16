@@ -18,6 +18,7 @@ from crawler.utils import (
     log_status,
     read_csv,
     write_csv,
+    append_csv_row,
     get_datetime,
     load_html,
 )
@@ -207,16 +208,16 @@ async def crawl_bfs(
                 page, url, depth, from_url, a_html, output_dir
             )
 
-            # URLをキーにして行を辞書に格納（同じURLは上書き）
-            rows_by_url[url] = row
+            # 行を都度CSVに追記（既存CSVがない場合は新規作成）
+            append_csv_row(csv_path, row, CSV_FIELDS)
 
             for next_url, next_anchor in link_map.items():
                 if next_url not in visited and next_url not in queued:
                     queue[depth + 1].append((next_url, url, next_anchor))
                     queued.add(next_url)
-
-    # 辞書から値のリストに戻してCSVに書き出し
-    write_csv(csv_path, list(rows_by_url.values()), CSV_FIELDS)
+                    
+    # 全てのURLをクロール完了
+    print(f"[INFO] Crawl completed. Total {len(visited)} URLs crawled.")
 
 
 async def retry_errors(page: Page, output_dir: str) -> None:
@@ -234,7 +235,13 @@ async def retry_errors(page: Page, output_dir: str) -> None:
 
     error_rows = [r for r in rows if r.get("status_code") == "ERROR"]
     print(f"Retrying {len(error_rows)} error rows...")
-
+    
+    # 一時ファイルに正常な行をコピー
+    temp_csv_path = csv_path + ".temp"
+    normal_rows = [r for r in rows if r.get("status_code") != "ERROR"]
+    write_csv(temp_csv_path, normal_rows, CSV_FIELDS)
+    
+    # エラー行を再試行して一時ファイルに追記
     for i, row in enumerate(error_rows):
         url = row["url"]
         print(f"[{i+1}/{len(error_rows)}] Retrying {url}")
@@ -248,12 +255,10 @@ async def retry_errors(page: Page, output_dir: str) -> None:
             output_dir,
         )
 
-        # 元の行のインデックスを維持しつつ、新しい行で上書き
-        rows_by_url[url] = new_row
+        # 新しい行を追記
+        append_csv_row(temp_csv_path, new_row, CSV_FIELDS)
 
-    # 辞書から値のリストに戻す
-    updated_rows = list(rows_by_url.values())
-
-    # CSVに書き出し
-    write_csv(csv_path, updated_rows, CSV_FIELDS)
+    # 一時ファイルを元のファイルに置き換え
+    import shutil
+    shutil.move(temp_csv_path, csv_path)
     print(f"Updated {len(error_rows)} rows in {csv_path}")
