@@ -86,11 +86,17 @@ async def main():
                                 else:
                                     final_url = row["url"]
                                 
+                                # リンクを抽出し、既に訪問済みでない場合のみ追加
                                 for next_url, a_html in extract_unique_links(
                                     html, final_url
                                 ).items():
-                                    start_urls.append((next_url, row["url"], a_html))
+                                    if next_url not in visited_set:  # 訪問済みのURLはスキップ
+                                        start_urls.append((next_url, row["url"], a_html))
 
+                # ログ出力（再開情報）
+                print(f"[INFO] Resume: Found {len(start_urls)} new URLs to crawl starting at depth {start_depth}")
+                print(f"[INFO] Resume: Loaded {len(visited_set)} visited URLs from CSV")
+                
                 # グローバル状態を復元
                 global visited, queued
                 visited = visited_set
