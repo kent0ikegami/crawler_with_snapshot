@@ -64,34 +64,46 @@ async def main():
             # クロール再開モード
             if args.resume:
                 visited_set, _, max_depth = restore_state_from_csv(csv_path)
-                start_depth = max_depth + 1
                 start_urls = []
-
-                # 最大深さのページからリンクを抽出
+                
+                # 引数で指定された開始深さを使用
+                start_depth = args.start_depth
+                print(f"[INFO] Using specified start depth: {start_depth}")
+                
+                # 最大深さのページからリンクを収集
                 import csv
-
+                
+                # 最大深さのURLを取得
+                target_depth = max_depth  # リンク抽出元の深さ
+                target_urls = []
                 with open(csv_path, "r", encoding="utf-8") as f:
                     for row in csv.DictReader(f):
-                        if int(row.get("depth", "-1")) == max_depth:
-                            html_path = os.path.join(
-                                output_dir, "html", f"{row['case_id']}.html"
-                            )
-                            html = load_html(html_path)
-                            if html:
-                                # リダイレクトチェーンがある場合は最終URLを使用
-                                redirect_chain = row.get("redirect_chain", "")
-                                if redirect_chain:
-                                    # リダイレクトチェーンから最終URLを抽出
-                                    final_url = redirect_chain.split(" → ")[-1]
-                                else:
-                                    final_url = row["url"]
-                                
-                                # リンクを抽出し、既に訪問済みでない場合のみ追加
-                                for next_url, a_html in extract_unique_links(
-                                    html, final_url
-                                ).items():
-                                    if next_url not in visited_set:  # 訪問済みのURLはスキップ
-                                        start_urls.append((next_url, row["url"], a_html))
+                        if int(row.get("depth", "-1")) == target_depth:
+                            target_urls.append(row)
+                
+                print(f"[INFO] Found {len(target_urls)} pages at depth {target_depth} for link extraction")
+                
+                # 収集したURLからリンクを抽出
+                for row in target_urls:
+                    html_path = os.path.join(
+                        output_dir, "html", f"{row['case_id']}.html"
+                    )
+                    html = load_html(html_path)
+                    if html:
+                        # リダイレクトチェーンがある場合は最終URLを使用
+                        redirect_chain = row.get("redirect_chain", "")
+                        if redirect_chain:
+                            # リダイレクトチェーンから最終URLを抽出
+                            final_url = redirect_chain.split(" → ")[-1]
+                        else:
+                            final_url = row["url"]
+                        
+                        # リンクを抽出し、既に訪問済みでない場合のみ追加
+                        for next_url, a_html in extract_unique_links(
+                            html, final_url
+                        ).items():
+                            if next_url not in visited_set:  # 訪問済みのURLはスキップ
+                                start_urls.append((next_url, row["url"], a_html))
 
                 # ログ出力（再開情報）
                 print(f"[INFO] Resume: Found {len(start_urls)} new URLs to crawl starting at depth {start_depth}")
@@ -105,6 +117,9 @@ async def main():
                 # 新規クロール
                 start_depth = 0
                 start_urls = [(url, "", "") for url in config.START_URLS]
+                
+                if hasattr(args, 'start_depth') and args.start_depth is not None:
+                    print(f"[WARN] --start-depth オプションは --resume と一緒に使用してください (無視されます)")
 
             # クローリングを実行
             await crawl_bfs(page, start_urls, output_dir, start_depth)

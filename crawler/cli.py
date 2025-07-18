@@ -18,6 +18,7 @@ def parse_args():
         description="Crawler with Snapshot - クローリングと同時に画面キャプチャも取るWebクローラー"
     )
     parser.add_argument("--resume", type=str, metavar="DIR", help="Resume crawl")
+    parser.add_argument("--start-depth", type=int, metavar="N", help="Start crawling from specified depth (used with --resume)")
     parser.add_argument("--retry", type=str, metavar="DIR", help="Retry ERROR rows")
     parser.add_argument(
         "--domain-replace",
@@ -51,6 +52,11 @@ def validate_args(args):
     # resume引数の検証
     if args.resume and not os.path.isdir(args.resume):
         print(f"Error: ディレクトリが見つかりません: {args.resume}")
+        return False
+
+    # start-depth引数の検証（resume指定時に必須）
+    if args.resume and args.start_depth is None:
+        print("Error: --resume オプション使用時は --start-depth の指定が必須です")
         return False
 
     return True
